@@ -1,0 +1,18 @@
+{
+  "genome": "GRCh37",
+  "lib": "PanelIGT",
+  "genome_fasta": "/path/to/GRCh37/genome.fasta",
+  "bed_file": "/path/to/PanelIGT/T364V1.hg19.bed",
+  "fastp": "--umi --umi_loc per_read --umi_len 6 --umi_skip 1 --umi_prefix UMI",
+  "data": [
+    {
+      "sampleid": "SF_HG001_example",
+      "read1": [
+        "/path/to/example_R1.fq.gz"
+      ],
+      "read2": [
+        "/path/to/example_R2.fq.gz"
+      ]
+    }
+  ]
+}

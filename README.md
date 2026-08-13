@@ -8,8 +8,8 @@ Pipeline order matches the manuscript analysis:
 
 ```
 FASTQ → (1) fastp + BWA-MEM
-           → (2) PosMix + somatic calling [+ force-calling if using the model]
-               → (3) SomaticXGB training   and/or   (4) SomaticXGB prediction
+           → (2) PosMix + somatic calling [+ force-calling if training and/or using model]
+               [if training and/or using model → (3) SomaticXGB training   and/or   (4) SomaticXGB prediction]
 ```
 
 ## Repository layout
@@ -21,7 +21,7 @@ FASTQ → (1) fastp + BWA-MEM
 | `3.SomaticXGB-training/` | R notebooks for hyperparameter search and final model training |
 | `4.SomaticXGB-predict/` | Apply a trained / released SomaticXGB model |
 | `pos_files/` | Position–frequency tables for PosMix (`train/` = HG001–003, `test/` = HG004–005) |
-| `models/SomaticXGB` | Released XGBoost model (originally `model_0820`) |
+| `models/SomaticXGB` | Released XGBoost model |
 
 ## Which path do you need?
 

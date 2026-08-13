@@ -8,8 +8,9 @@ Pipeline order matches the manuscript analysis:
 
 ```
 FASTQ → (1) fastp + BWA-MEM
-           → (2) PosMix + somatic calling [+ force-calling if training and/or using model]
-               [if training and/or using model → (3) SomaticXGB training   and/or   (4) SomaticXGB prediction]
+           → (2) PosMix + somatic calling [+ force-calling if training or using model]
+                → (3) SomaticXGB training
+                     → (4) SomaticXGB prediction
 ```
 
 ## Repository layout

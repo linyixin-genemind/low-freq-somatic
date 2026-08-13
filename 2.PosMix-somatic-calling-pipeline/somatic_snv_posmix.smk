@@ -1,3 +1,13 @@
+# PosMix + somatic callers + optional force-calling for SomaticXGB.
+#
+# Controlled by config["callers"]:
+#   mutect2 / strelka2 / varscan / varscan_novo  — mainstream callers only
+#   features — Mutect2 force-calling + bam-readcount TSV for training/prediction
+#
+# Callers-only (no model): omit "features".
+# Train (3.SomaticXGB-training) or predict (4.SomaticXGB-predict): include "features".
+# See README.md for usage modes and example configs.
+
 import os, random, json
 
 os.system("mkdir -p posmix")
@@ -13,11 +23,11 @@ for pair in config["data"]:
         if not os.path.exists(N_raw_stats):
             os.system(f"samtools flagstat -@ 8 {bam_normal} > {N_raw_stats}")
 
-    # 取.flagstat.txt文件第一行的那个reads数
-    # 这些文件的reads数全部都是按SE计
+    # Take the read count from the first line of the .flagstat.txt file
+    # All read counts in these files are counted as single-end (SE)
     normal_total = int(os.popen(f"sed -n '1p' {N_raw_stats} | grep -o '^[0-9]*'").read())
     if normal_total < max(max(list(map(float, config["tumor_reads"]))), float(config["normal_reads"])) * 1000000:
-        raise Exception(f"{bam_normal}的reads数不足，请重新检查！")
+        raise Exception(f"Insufficient reads in {bam_normal}, please check again!")
 
 ls = []
 seed = int(config["seed"])
@@ -59,8 +69,8 @@ for pair in config["data"]:
             ls.append(f'varscan_novo/{pair["id"]}_reads{reads}M.snp.failed.vcf.gz')
             ls.append(f'varscan_novo/{pair["id"]}_reads{reads}M.indel.failed.vcf.gz')
 
-        # Feature tables used later for SomaticXGB training / prediction
-        # (VarScan2 raw alleles + Mutect2 force-calling + bam-readcount TSV).
+        # Enabled only when "features" is in callers. Required before
+        # 3.SomaticXGB-training or 4.SomaticXGB-predict (force-calling + TSV).
         if "features" in config["callers"]:
             ls.append(f'mutect_a_vraw/{pair["id"]}_reads{reads}M.raw.vcf.gz')
             ls.append(f'varscan/{pair["id"]}_reads{reads}M.raw.snp.sort.vcf.gz')
@@ -119,8 +129,7 @@ rule posmix:
     output:
         receptor = temp("posmix/{id}_T_reads{reads}M.receptor.bam"),
         posmix_raw = temp("posmix/{id}_T_reads{reads}M.raw.bam"),
-        posmix = "posmix/{id}_T_reads{reads}M.bam",
-        posfeature = "posmix/{id}_T_reads{reads}M.bam.pf.txt.gz",
+        posmix = "posmix/{id}_T_reads{reads}M.bam"
     threads: 8
     benchmark: "logs/{id}_reads{reads}M_posmix.benchmark.txt"
     run:
@@ -138,7 +147,6 @@ rule posmix:
         shell("posmix -1 {output.receptor} -2 {input.T} -p {input.freq} -s " + str(seed) + " -o {output.posmix_raw}")
         shell('gatk --java-options "-XX:ParallelGCThreads=8" MarkDuplicates -I {output.posmix_raw} -O {output.posmix} -M {output.posmix}.dupmetrics.txt')
         shell("samtools index {output.posmix}")
-        shell("posfeature -b {output.posmix} -g {genome_dir} -p {input.cp} | bgzip -c > {output.posfeature}")
 
 rule tidy_N:
     input:
@@ -146,8 +154,7 @@ rule tidy_N:
         cp = "cp.txt"
     output:
         reheader = temp("posmix/{id}_N.reheader.bam"),
-        tidy = "posmix/{id}_N.tidy.bam",
-        posfeature = "posmix/{id}_N.tidy.bam.pf.txt.gz"
+        tidy = "posmix/{id}_N.tidy.bam"
     threads: 8
     benchmark: "logs/{id}_tidy_N.benchmark.txt"
     shell:
@@ -159,7 +166,6 @@ rule tidy_N:
 
         samtools index {output.tidy}
         samtools stats -@ 8 {output.tidy} > {output.tidy}.stat.txt
-        posfeature -b {output.tidy} -g {genome_dir} -p {input.cp} | bgzip -c > {output.posfeature}
         '''
 
 rule N_pileup:
@@ -205,7 +211,7 @@ rule varscan:
         '''
         opref={output.snp}
         opref=${{opref%.snp.vcf.gz}}
-        java -jar /biobase/bin/VarScan.v2.4.3.jar somatic <(bgzip -d -c {input.N}) <(bgzip -d -c {input.T}) ${{opref}}.all {params.opts}
+        java -jar VarScan.v2.4.3.jar somatic <(bgzip -d -c {input.N}) <(bgzip -d -c {input.T}) ${{opref}}.all {params.opts}
         cat ${{opref}}.all.snp.vcf | perl /biobase/apps/novotumor/somaticfilter.pl - | bgzip -c > {output.snp}
         cat ${{opref}}.all.indel.vcf | perl /biobase/apps/novotumor/somaticfilter.pl - | bgzip -c > {output.indel}
         bgzip ${{opref}}.all.snp.vcf
@@ -234,8 +240,8 @@ rule varscan_novo:
         '''
         zcat {input.snp} | awk -F"\\t" '{{if($0!~/^#/){{print $1"\\t"$2"\\t"$2}}}}' | parallel -k -j {threads} --pipe -N 1000 'bam-readcount -q 30 -b 30 -f {params.ref} -l /dev/stdin -w 0 {input.bam}' | bgzip -c > {output.snp_rc}
         zcat {input.indel} | awk -F"\\t" '{{if($0!~/^#/){{if(length($4)>1){{print $1"\\t"$2+1"\\t"$2+1}} else {{print $1"\\t"$2"\\t"$2}}}}}}' | parallel -k -j {threads} --pipe -N 1000 'bam-readcount -q 30 -b 30 -f {params.ref} -l /dev/stdin -w 0 {input.bam}' | bgzip -c > {output.indel_rc}
-        java -jar /biobase/bin/VarScan.v2.4.3.jar fpfilter <(zcat {input.snp}) <(bgzip -d -c {output.snp_rc}) {params.fpfilter} --output-file {output.snp} --filtered-file {output.snp2}
-        java -jar /biobase/bin/VarScan.v2.4.3.jar fpfilter <(zcat {input.indel}) <(bgzip -d -c {output.indel_rc}) {params.fpfilter} --output-file {output.indel} --filtered-file {output.indel2}
+        java -jar VarScan.v2.4.3.jar fpfilter <(zcat {input.snp}) <(bgzip -d -c {output.snp_rc}) {params.fpfilter} --output-file {output.snp} --filtered-file {output.snp2}
+        java -jar VarScan.v2.4.3.jar fpfilter <(zcat {input.indel}) <(bgzip -d -c {output.indel_rc}) {params.fpfilter} --output-file {output.indel} --filtered-file {output.indel2}
         '''
 
 rule bgzip:

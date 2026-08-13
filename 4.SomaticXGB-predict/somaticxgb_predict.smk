@@ -1,11 +1,13 @@
-# Apply the trained SomaticXGB model to PosMix + calling outputs.
+# Apply a trained SomaticXGB model to PosMix + force-calling outputs.
 #
-# Prerequisites: run 2.PosMix-somatic-calling-pipeline with callers that include
-# "features" (and typically "varscan" / "varscan_novo") so that the following
-# exist for each sample/depth:
+# Required upstream: 2.PosMix-somatic-calling-pipeline with "features" in callers
+# (same working directory). Without force-calling, these inputs will be missing:
 #   mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz
 #   varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz
 #   varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz
+#
+# Callers-only runs (no "features") cannot feed this pipeline.
+# To retrain instead of scoring, use 3.SomaticXGB-training/.
 #
 # Usage (from the same analysis directory used for PosMix/calling):
 #   snakemake -s /path/to/4.SomaticXGB-predict/somaticxgb_predict.smk \

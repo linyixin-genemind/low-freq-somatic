@@ -1,9 +1,9 @@
 {
-  "name": "snv45_test_example",
+  "name": "features_for_somaticxgb_example",
   "genome": "GRCh37",
   "genome_fasta": "/path/to/GRCh37/genome.fasta",
   "min_freq": 0.0025,
-  "callers": ["mutect2", "strelka2", "varscan", "varscan_novo", "features"],
+  "callers": ["varscan", "varscan_novo", "features"],
   "bed_file": "bed/panel/intersect_HG004_HG005_panel.sort.bed",
   "posfreq_file": "../pos_files/test/45/pf45_low.txt",
   "seed": 700,

@@ -1,51 +1,85 @@
 # SomaticXGB training
 
-Manuscript setup: HG001–HG003 simulated tumor/normal pairs for training; HG004–HG005 for testing.
+Build a labeled feature matrix from HG001-003 **force-calling** outputs, tune hyperparameters with 5-fold CV, and train the final XGBoost model.
 
 ## Prerequisite (required)
 
-Training does **not** start from ordinary Mutect2/Strelka2/VarScan2 call sets alone.
+Training does **not** start from ordinary Mutect2 / Strelka2 / VarScan2 call sets alone.
 
-You must first run `../2.PosMix-somatic-calling-pipeline/` on the **training** PosMix pairs with `"features"` in `callers`, for example:
+1. Run `../2.PosMix-somatic-calling-pipeline/` on the **training** PosMix pairs (`pos_files/train/{12,13,21,23,31,32}/`) with `"features"` in `callers`, e.g.:
 
 ```json
 "callers": ["varscan", "varscan_novo", "features"]
 ```
 
-That step performs Mutect2 **force-calling** and writes the files the feature matrix is built from, including:
+2. That writes, for each `{id}_reads{reads}M`:
 
-- `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz` — force-called VCF
+- `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz` — Mutect2 force-called VCF
 - `varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz`
 - `varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz`
 
-If `"features"` was omitted in step 2, force-calling was skipped and these notebooks / feature assembly will not have the required inputs.
+Without `"features"`, force-calling is skipped and the steps below cannot run.
 
-Use `pos_files/train/…` for training pairs (see `../pos_files/README.md`).
+**Note on sample IDs:** output names are `{id}_reads{reads}M`. If several HG pairs share one working directory, give each pair a **unique** `id` in the pipeline-2 config (and the same `id` here). `plat` is used to locate `pf_{plat}_reads{reads}M.txt` under `pos_files/train/{group}/`.
 
-## Notebooks
+## Workflow
 
-| File | Role |
-|------|------|
-| `notebooks/tune_SomaticXGB.ipynb` | 5-fold CV grid search over `max_depth`, `eta`, `nrounds` (produces `med_auc_0820.xls`) |
-| `notebooks/train_SomaticXGB.ipynb` | Final model fit with selected hyperparameters and `xgb.save` |
+```
+force-calling VCFs (pipeline 2 + "features")
+        │
+        ▼
+build_feature_matrix.R   ← shared extractor in 4.SomaticXGB-predict/SomaticXGB_features.R
+        │
+        ▼
+feature_matrix.tsv.gz
+        │
+        ▼
+notebooks/train_SomaticXGB.ipynb
+   • 5-fold CV grid search (PR-AUC)
+   • final model fit + xgb.save
+```
 
-Selected hyperparameters (from `med_auc_0820.xls` / training notebook):
+### 1. Configure jobs
+
+```bash
+cp config.training.example.json config.training.json
+# edit analysis_dir, pairs (group / id / plat), tumor_reads
+```
+
+Compact form expands `pairs` × `tumor_reads` using `posfreq_template`. You can instead supply an explicit `jobs` array of `{name, posfreq_file, plat, group}`.
+
+### 2. Build the matrix (optional standalone)
+
+```bash
+Rscript build_feature_matrix.R config.training.json feature_matrix.tsv.gz
+```
+
+The training notebook runs this for you if `feature_matrix.tsv.gz` is built via the notebook cell.
+
+### 3. Train in the notebook
+
+Open `notebooks/train_SomaticXGB.ipynb` and run all cells:
+
+| Step | What it does |
+|------|----------------|
+| Build matrix | Calls `build_feature_matrix.R` on HG001-003 force-calling outputs |
+| CV tune | Grid over `max_depth ∈ {3,5,7,9}`, `eta ∈ {0.01,0.05,0.1,0.2}`, `nrounds ∈ {100,200,400}`; 5-fold; median PR-AUC |
+| Final train | Fits on **all** rows; default hyperparameters match the manuscript (`7` / `0.1` / `400`) |
+| Outputs | `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, model under `../models/` |
+
+Reference tables from the original analysis (`med_auc_0820.xls`, `importance_0820.txt`) remain in this directory for comparison.
+
+## Released model
+
+`../models/SomaticXGB` was trained with:
 
 - `max.depth = 7`
 - `eta = 0.1`
 - `nrounds = 400`
 - `objective = "binary:logistic"`
 
-The released model is saved in the repo as `../models/SomaticXGB` (originally `model_0820`).
+Features match Supplementary Table 4 / `importance_0820.txt`.
 
-## Feature matrix
+## Prediction (no retraining)
 
-Training used a feature table assembled from PosMix + **force-calling** outputs (`dtm_0819.txt` in the original analysis directory). Features match Supplementary Table 4 / `importance_0820.txt`.
-
-To rebuild features after running pipeline 2 with `"features"`:
-
-1. Reuse the feature-extraction logic in `../4.SomaticXGB-predict/SomaticXGB.R` across all train pairs / depths.
-2. Concatenate into one training table.
-3. Run the tune → train notebooks above.
-
-For scoring with a finished model (no retraining), skip this directory and use `../4.SomaticXGB-predict/` instead.
+Skip this directory and use `../4.SomaticXGB-predict/` with the released or newly saved model. Prediction inputs must also come from pipeline 2 with `"features"`.

@@ -1,15 +1,13 @@
 # Apply a trained SomaticXGB model to PosMix + force-calling outputs.
 #
 # Required upstream: 2.PosMix-somatic-calling-pipeline with "features" in callers
-# (same working directory). Without force-calling, these inputs will be missing:
+# (run prediction from that same working directory). Without force-calling:
 #   mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz
 #   varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz
 #   varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz
+# will be missing and this pipeline cannot run.
 #
-# Callers-only runs (no "features") cannot feed this pipeline.
-# To retrain instead of scoring, use 3.SomaticXGB-training/.
-#
-# Usage (from the same analysis directory used for PosMix/calling):
+# Usage:
 #   snakemake -s /path/to/4.SomaticXGB-predict/somaticxgb_predict.smk \
 #       --configfile config.json -j <cores>
 
@@ -18,9 +16,43 @@ import os
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(workflow.snakefile), ".."))
 PIPELINE_DIR = os.path.dirname(workflow.snakefile)
 
-model_path = config.get("model", os.path.join(REPO_ROOT, "models", "SomaticXGB"))
-rscript = config.get("somaticxgb_rscript", os.path.join(PIPELINE_DIR, "SomaticXGB.R"))
-posfreq_file = config["posfreq_file"]
+
+def _resolve(path, default=None):
+    if path is None or path == "" or path == "-":
+        return default
+    if os.path.isabs(path):
+        return path
+    # Prefer path relative to cwd (analysis dir); fall back to repo root.
+    cand = [
+        os.path.abspath(path),
+        os.path.abspath(os.path.join(REPO_ROOT, path)),
+        os.path.abspath(os.path.join(PIPELINE_DIR, path)),
+    ]
+    for p in cand:
+        if os.path.exists(p):
+            return p
+    return cand[0]
+
+
+model_path = _resolve(
+    config.get("model"),
+    default=os.path.join(REPO_ROOT, "models", "SomaticXGB"),
+)
+rscript = _resolve(
+    config.get("somaticxgb_rscript"),
+    default=os.path.join(PIPELINE_DIR, "SomaticXGB.R"),
+)
+# Global default; each sample may override with data[].posfreq_file
+default_posfreq = config.get("posfreq_file", "-")
+
+sample_posfreq = {}
+for pair in config["data"]:
+    pf = pair.get("posfreq_file", default_posfreq)
+    if pf not in (None, "", "-"):
+        pf = _resolve(pf)
+    else:
+        pf = "-"
+    sample_posfreq[pair["id"]] = pf
 
 ls = []
 for pair in config["data"]:
@@ -34,23 +66,24 @@ rule all:
 
 
 rule SomaticXGB:
-    """Score VarScan2 candidates with the trained SomaticXGB model."""
+    """Extract features from force-calling outputs and score with SomaticXGB."""
     input:
-        "mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz",
-        "varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz",
-        "varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz",
+        mutect="mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz",
+        varscan="varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz",
+        rc="varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz",
     output:
         "pred/{id}_reads{reads}M_pred.txt.gz",
     benchmark:
         "logs/{id}_reads{reads}M_somaticxgb.benchmark.txt"
     params:
-        pf=posfreq_file,
+        pf=lambda wildcards: sample_posfreq[wildcards.id],
         name="{id}_reads{reads}M",
         model=model_path,
         rscript=rscript,
     shell:
         """
-        mkdir -p pred
+        mkdir -p pred logs
+        test -f {params.model} || {{ echo "Model not found: {params.model}" >&2; exit 1; }}
         Rscript {params.rscript} {params.name} {params.pf} {params.model}
         bgzip -f pred/{params.name}_pred.txt
         """

@@ -1,48 +1,70 @@
 # SomaticXGB prediction
 
-Standalone Snakemake rules that apply a trained model (default: `../models/SomaticXGB`) to candidate variants.
+Score candidates with a trained / released model (`../models/SomaticXGB` by default).
 
-This directory does **not** run PosMix, callers, or force-calling. It only scores files that already exist.
+This directory does **not** run PosMix, callers, or force-calling. It only:
+
+1. Reads pipeline-2 **force-calling** outputs  
+2. Builds the same feature table used in training (`SomaticXGB_features.R`)  
+3. Applies the XGBoost model → `pred/{id}_reads{reads}M_pred.txt.gz`
 
 ## Prerequisite (required)
 
-Prediction inputs must come from `../2.PosMix-somatic-calling-pipeline/` run in the **same working directory**, with `"features"` enabled so Mutect2 **force-calling** and feature tables were produced.
-
-Example step-2 `callers`:
+Run `../2.PosMix-somatic-calling-pipeline/` in the **same working directory**, with `"features"` enabled:
 
 ```json
 "callers": ["varscan", "varscan_novo", "features"]
 ```
 
-Required files per sample / depth:
+Required files per `{id}` / `{reads}`:
 
-- `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz` — force-called VCF
+- `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz`
 - `varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz`
 - `varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz`
 
-Caller-only outputs (e.g. Mutect2 `filter.vcf.gz` or Strelka2 SNVs **without** `"features"`) are **not** sufficient for this pipeline.
+Caller-only VCFs (Mutect2 / Strelka2 / VarScan **without** `"features"`) are **not** enough.
 
-If you only want conventional callers and no model scores, stop after pipeline 2 and omit `"features"` there; do not run this directory.
+`data[].id` and `tumor_reads` in the predict config must match the names used in that pipeline-2 run.
 
-## Train vs predict
+## Config
 
-| Goal | Path |
-|------|------|
-| Use the released model (or your own `.model` file) | This directory (`4.…`) |
-| Retrain / tune hyperparameters | `../3.SomaticXGB-training/` (still needs the same force-calling inputs from step 2) |
+See `config.example.json`. Relevant keys:
+
+| Key | Role |
+|-----|------|
+| `data[].id` | Sample id → looks for `{id}_reads{reads}M` under `mutect_a_vraw/` etc. |
+| `tumor_reads` | Depths to score (same list as pipeline 2) |
+| `model` | Path to XGBoost model (default: `../models/SomaticXGB`) |
+| `posfreq_file` | Optional. PosMix spike list for a `label` column (evaluation). Use `"-"` or omit for blind scoring |
+| `data[].posfreq_file` | Optional per-sample override of the global `posfreq_file` |
+
+BAM paths are **not** used here (features already come from force-calling outputs).
 
 ## Run
+
+From the analysis directory that contains `mutect_a_vraw/`, `varscan/`, `varscan_novo/`:
 
 ```bash
 snakemake -s /path/to/4.SomaticXGB-predict/somaticxgb_predict.smk \
   --configfile config.json --cores 8
 ```
 
-Outputs: `pred/{id}_reads{reads}M_pred.txt.gz` (column `pred` = model score).
+Or call the R script for one sample:
 
-Optional config keys:
+```bash
+Rscript /path/to/4.SomaticXGB-predict/SomaticXGB.R \
+  SURFSeq_5000_reads100M \
+  ../pos_files/test/45/pf45_low.txt \
+  ../models/SomaticXGB
+```
 
-- `model` — path to XGBoost model (default: `../models/SomaticXGB`)
-- `somaticxgb_rscript` — path to `SomaticXGB.R`
+Pass `-` instead of the posfreq path to skip labels.
 
-See `config.example.json`. Keep `data` / `tumor_reads` / `posfreq_file` consistent with the PosMix + `"features"` run that produced the inputs.
+## Train vs predict
+
+| Goal | Path |
+|------|------|
+| Score with released / your model | This directory |
+| Rebuild features + CV + retrain | `../3.SomaticXGB-training/` (same force-calling inputs) |
+
+Feature extraction is shared: `SomaticXGB_features.R` ← also used by `3.…/build_feature_matrix.R`.

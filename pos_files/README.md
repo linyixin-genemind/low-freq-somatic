@@ -6,11 +6,11 @@ Position-and-frequency tables used by PosMix to spike in synthetic somatic SNVs.
 
 ```
 pos_files/
-  train/          # HG001–HG003 pairs (manuscript training set)
+  train/          # HG001-003 pairs (manuscript training set)
     12/ 13/ 21/ 23/ 31/ 32/
       pf_<platform>_reads<N>M.txt   # exact VAF assignments used in the paper
       only*.txt                     # germline site lists used when generating VAFs
-  test/           # HG004–HG005 pairs (manuscript test set)
+  test/           # HG004-005 pairs (manuscript test set)
     45/pf45_low.txt
     54/pf54_low.txt
   templates/      # shared low-VAF templates (pf*_low.txt) for all pairs

@@ -19,9 +19,9 @@ FASTQ → (1) fastp + BWA-MEM
 |------|-------------|
 | `1.fastp-BWA-pipeline/` | Read QC (`fastp`) and alignment (`BWA-MEM` to GRCh37) |
 | `2.PosMix-somatic-calling-pipeline/` | PosMix + Mutect2 / Strelka2 / VarScan2; optional `"features"` enables force-calling for SomaticXGB |
-| `3.SomaticXGB-training/` | R notebooks for hyperparameter search and final model training |
+| `3.SomaticXGB-training/` | Build feature matrix from force-calling VCFs → CV tune → train SomaticXGB |
 | `4.SomaticXGB-predict/` | Apply a trained / released SomaticXGB model |
-| `pos_files/` | Position–frequency tables for PosMix (`train/` = HG001–003, `test/` = HG004–005) |
+| `pos_files/` | Position–frequency tables for PosMix (`train/` = HG001-003, `test/` = HG004-005) |
 | `models/SomaticXGB` | Released XGBoost model |
 
 ## Workflow paths
@@ -38,8 +38,10 @@ For `callers` lists and run commands, see each subdirectory README (especially `
 
 ## Training and test sample details
 
-- **Training**: HG001 / HG002 / HG003 PosMix pairs → `pos_files/train/{12,13,21,23,31,32}/`
-- **Test**: HG004 / HG005 PosMix pairs → `pos_files/test/{45,54}/`
+Pair IDs under `pos_files/` encode **donor → background** GIAB samples (first digit = tumor/donor, second = normal/background): e.g. `12` = HG001 reads mixed into HG002; `45` = HG004 into HG005.
+
+- **Training**: HG001-003 PosMix pairs → `pos_files/train/{12,13,21,23,31,32}/`
+- **Test**: HG004-005 PosMix pairs → `pos_files/test/{45,54}/`
 - **Released model hyperparameters**: `max.depth=7`, `eta=0.1`, `nrounds=400` (`3.SomaticXGB-training/`)
 
 External tool used for mixing: [PosMix](https://github.com/liqg/posmix).

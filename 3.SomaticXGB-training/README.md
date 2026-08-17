@@ -20,7 +20,7 @@ Training does **not** start from ordinary Mutect2 / Strelka2 / VarScan2 call set
 
 Without `"features"`, force-calling is skipped and the steps below cannot run.
 
-**Note on sample IDs:** output names are `{id}_reads{reads}M`. If several HG pairs share one working directory, give each pair a **unique** `id` in the pipeline-2 config (and the same `id` here). `plat` is used to locate `pf_{plat}_reads{reads}M.txt` under `pos_files/train/{group}/`.
+**Note on sample IDs:** output names are `{id}_reads{reads}M`, and directory-mode posfreq files must be `pf_{id}_reads{reads}M.txt`. Keep the same `id` in pipeline 2 and here. If several HG pairs share one working directory, their `id` values must still be unique **and** match the corresponding `pf_<id>_…` filenames (or run each pair in its own analysis directory).
 
 ## Workflow
 
@@ -43,10 +43,10 @@ notebooks/train_SomaticXGB.ipynb
 
 ```bash
 cp config.training.example.json config.training.json
-# edit analysis_dir, pairs (group / id / plat), tumor_reads
+# edit analysis_dir, pairs (group / id), tumor_reads
 ```
 
-Compact form expands `pairs` × `tumor_reads` using `posfreq_template`. You can instead supply an explicit `jobs` array of `{name, posfreq_file, plat, group}`.
+Compact form expands `pairs` × `tumor_reads` using `posfreq_template`. You can instead supply an explicit `jobs` array of `{name, posfreq, group}`.
 
 ### 2. Build the matrix (optional standalone)
 

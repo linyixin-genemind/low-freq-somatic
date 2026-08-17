@@ -61,7 +61,7 @@ expand_jobs <- function(cfg) {
   reads <- cfg$tumor_reads
   pf_tmpl <- cfg$posfreq_template
   if (is.null(pf_tmpl)) {
-    pf_tmpl <- "{pos_files}/train/{group}/pf_{plat}_reads{reads}M.txt"
+    pf_tmpl <- "{pos_files}/train/{group}/pf_{id}_reads{reads}M.txt"
   }
   pos_files <- cfg$pos_files
   if (is.null(pos_files)) {
@@ -75,13 +75,11 @@ expand_jobs <- function(cfg) {
       pf <- pf_tmpl
       pf <- gsub("\\{pos_files\\}", pos_files, pf)
       pf <- gsub("\\{group\\}", p$group, pf)
-      pf <- gsub("\\{plat\\}", p$plat, pf)
       pf <- gsub("\\{id\\}", p$id, pf)
       pf <- gsub("\\{reads\\}", as.character(r), pf)
       data.table(
         name = name,
-        posfreq_file = pf,
-        plat = p$plat,
+        posfreq = pf,
         group = as.character(p$group)
       )
     }))
@@ -90,7 +88,11 @@ expand_jobs <- function(cfg) {
 }
 
 jobs <- expand_jobs(cfg)
-required <- c("name", "posfreq_file")
+if (!("posfreq" %in% names(jobs)) && ("posfreq_file" %in% names(jobs))) {
+  message('WARNING: job column "posfreq_file" is deprecated; use "posfreq".')
+  setnames(jobs, "posfreq_file", "posfreq")
+}
+required <- c("name", "posfreq")
 miss <- setdiff(required, names(jobs))
 if (length(miss)) stop("Each job needs columns: ", paste(required, collapse = ", "))
 
@@ -102,7 +104,7 @@ parts <- list()
 for (i in seq_len(nrow(jobs))) {
   job <- jobs[i]
   name <- job$name
-  pf <- job$posfreq_file
+  pf <- job$posfreq
   if (!grepl("^/", pf)) {
     # Allow paths relative to repo root or config file directory.
     cand <- c(
@@ -111,7 +113,7 @@ for (i in seq_len(nrow(jobs))) {
       file.path(repo_root, pf)
     )
     hit <- cand[file.exists(cand)]
-    if (!length(hit)) stop("posfreq_file not found for ", name, ": ", pf)
+    if (!length(hit)) stop("posfreq not found for ", name, ": ", pf)
     pf <- normalizePath(hit[[1]])
   }
   message(sprintf("[%d/%d] %s", i, nrow(jobs), name))
@@ -129,7 +131,6 @@ for (i in seq_len(nrow(jobs))) {
     )
   }
   dt <- extract_somaticxgb_features(name, pf)
-  if ("plat" %in% names(job) && !is.na(job$plat)) dt[, plat := job$plat]
   if ("group" %in% names(job) && !is.na(job$group)) dt[, group := as.character(job$group)]
   parts[[length(parts) + 1L]] <- dt
 }

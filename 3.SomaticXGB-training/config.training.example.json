@@ -2,13 +2,13 @@
   "analysis_dir": "/path/to/workdir_with_force_calling_outputs",
   "pos_files": "../pos_files",
   "tumor_reads": [50, 75, 100, 125, 150],
-  "posfreq_template": "{pos_files}/train/{group}/pf_{plat}_reads{reads}M.txt",
+  "posfreq_template": "{pos_files}/train/{group}/pf_{id}_reads{reads}M.txt",
   "pairs": [
-    {"group": "12", "id": "SURFSeq_5000_g12", "plat": "SURFSeq_5000"},
-    {"group": "13", "id": "SURFSeq_5000_g13", "plat": "SURFSeq_5000"},
-    {"group": "21", "id": "SURFSeq_5000_g21", "plat": "SURFSeq_5000"},
-    {"group": "23", "id": "SURFSeq_5000_g23", "plat": "SURFSeq_5000"},
-    {"group": "31", "id": "SURFSeq_5000_g31", "plat": "SURFSeq_5000"},
-    {"group": "32", "id": "SURFSeq_5000_g32", "plat": "SURFSeq_5000"}
+    {"group": "12", "id": "SURFSeq_5000"},
+    {"group": "13", "id": "SURFSeq_5000"},
+    {"group": "21", "id": "SURFSeq_5000"},
+    {"group": "23", "id": "SURFSeq_5000"},
+    {"group": "31", "id": "SURFSeq_5000"},
+    {"group": "32", "id": "SURFSeq_5000"}
   ]
 }

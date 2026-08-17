@@ -1,11 +1,11 @@
 {
-  "name": "callers_only_example",
+  "name": "callers_only_benchmark_example",
   "genome": "GRCh37",
   "genome_fasta": "/path/to/GRCh37/genome.fasta",
   "min_freq": 0.0025,
   "callers": ["mutect2", "strelka2", "varscan", "varscan_novo"],
   "bed_file": "bed/panel/intersect_HG004_HG005_panel.sort.bed",
-  "posfreq_file": "../pos_files/test/45/pf45_low.txt",
+  "posfreq": "../pos_files/test/45/pf45_low.txt",
   "seed": 700,
   "tumor_reads": [60, 80, 100, 120, 140],
   "normal_reads": 5,

@@ -4,6 +4,10 @@
 #   mutect2 / strelka2 / varscan / varscan_novo  — mainstream callers only
 #   features — Mutect2 force-calling + bam-readcount TSV for training/prediction
 #
+# posfreq:
+#   file      → benchmark (same table for every id × depth)
+#   directory → pf_{id}_reads{N}M.txt per job (training diversity)
+#
 # Callers-only (no model): omit "features".
 # Train (3.SomaticXGB-training) or predict (4.SomaticXGB-predict): include "features".
 # See README.md for usage modes and example configs.
@@ -92,14 +96,62 @@ genome_dir = config.get(
     f"/biobase/data/genome/{config['genome']}/genome.fasta",
 )
 
+# ---------------------------------------------------------------------------
+# Posfreq path: file = benchmark (same table for every id×depth);
+#               directory = training-style (match pf_{id}_reads{N}M.txt).
+# Config key: "posfreq" (legacy alias "posfreq_file" still accepted).
+# ---------------------------------------------------------------------------
+posfreq_path = config.get("posfreq")
+if posfreq_path is None and "posfreq_file" in config:
+    print('[posfreq] WARNING: config key "posfreq_file" is deprecated; use "posfreq".')
+    posfreq_path = config["posfreq_file"]
+if posfreq_path is None:
+    raise Exception('Config must set "posfreq" to a file (benchmark) or a directory (per id×depth tables).')
+posfreq_path = os.path.abspath(posfreq_path)
+
+if os.path.isdir(posfreq_path):
+    posfreq_mode = "directory"
+elif os.path.isfile(posfreq_path):
+    posfreq_mode = "file"
+else:
+    raise Exception(f"posfreq path not found (file or directory): {posfreq_path}")
+
+
+def resolve_posfreq(sample_id, reads):
+    """Return the PosMix position–frequency table for one id × depth."""
+    if posfreq_mode == "file":
+        return posfreq_path
+    path = os.path.join(posfreq_path, f"pf_{sample_id}_reads{reads}M.txt")
+    if os.path.isfile(path):
+        return path
+    raise Exception(
+        f"No posfreq file for id={sample_id} reads={reads}M under {posfreq_path}.\n"
+        f"Expected: {path}\n"
+        "Directory mode requires names pf_<id>_reads<N>M.txt (see ../pos_files/README.md)."
+    )
+
+
+# Resolve and validate all tables needed for this config; collect for cp.txt.
+posfreq_by_job = {}
+all_posfreq_files = []
+for pair in config["data"]:
+    for reads in config["tumor_reads"]:
+        pf = resolve_posfreq(pair["id"], reads)
+        posfreq_by_job[(pair["id"], str(reads))] = pf
+        all_posfreq_files.append(pf)
+all_posfreq_files = sorted(set(all_posfreq_files))
+
+print(f"[posfreq] mode={posfreq_mode} path={posfreq_path} ({len(all_posfreq_files)} table(s))")
+
+
 rule all:
     input:
         ls
 
 rule cp:
-    input: config["posfreq_file"]
+    input: all_posfreq_files
     output: "cp.txt"
-    shell: "cut -f1,2 {input} > {output}"
+    shell: "cut -f1,2 {input} | sort -u > {output}"
 
 rule N_sample:
     input:
@@ -122,7 +174,7 @@ rule N_sample:
 
 rule posmix:
     input:
-        freq = config["posfreq_file"],
+        posfreq = lambda wildcards: posfreq_by_job[(wildcards.id, str(wildcards.reads))],
         T = lambda wildcards: bams[wildcards.id]['tumor'],
         N = lambda wildcards: bams[wildcards.id]['normal'],
         cp = "cp.txt"
@@ -144,7 +196,7 @@ rule posmix:
         seed = seed_dict[f"{wildcards.id}_T_reads{wildcards.reads}M"]
         shell("samtools view --no-PG -@ 4 -s " + str(seed + p_N) + " -b -o {output.receptor} {input.N}")
         shell("samtools index {output.receptor}")
-        shell("posmix -1 {output.receptor} -2 {input.T} -p {input.freq} -s " + str(seed) + " -o {output.posmix_raw}")
+        shell("posmix -1 {output.receptor} -2 {input.T} -p {input.posfreq} -s " + str(seed) + " -o {output.posmix_raw}")
         shell('gatk --java-options "-XX:ParallelGCThreads=8" MarkDuplicates -I {output.posmix_raw} -O {output.posmix} -M {output.posmix}.dupmetrics.txt')
         shell("samtools index {output.posmix}")
 

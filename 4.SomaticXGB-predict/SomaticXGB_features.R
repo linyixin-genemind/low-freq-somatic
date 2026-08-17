@@ -4,9 +4,9 @@
 #   mutect_a_vraw/<name>.raw.vcf.gz          # Mutect2 force-calling
 #   varscan/<name>.raw.snp.sort.vcf.gz
 #   varscan_novo/<name>.raw.snp.vcf.rc.tsv.gz
-#   <posfreq_file> (optional)                # PosMix spiked sites → labels
+#   <posfreq> (optional)                     # PosMix spiked sites → labels
 #
-# Returns a data.table with allele-level features. When posfreq_file is
+# Returns a data.table with allele-level features. When posfreq is
 # provided, adds binary label (1 = spiked site, 0 otherwise).
 
 SOMATICXGB_FEATURES <- c(
@@ -33,7 +33,7 @@ SOMATICXGB_FEATURES <- c(
   }
 }
 
-extract_somaticxgb_features <- function(name, posfreq_file = NULL) {
+extract_somaticxgb_features <- function(name, posfreq = NULL) {
   suppressPackageStartupMessages({
     library(data.table)
     library(magrittr)
@@ -77,14 +77,14 @@ extract_somaticxgb_features <- function(name, posfreq_file = NULL) {
   # Keep only alleles called by VarScan2.
   dt <- a[c_p %in% v$c_p] %>% .[var %in% v$var]
 
-  if (!is.null(posfreq_file) && nzchar(posfreq_file) && posfreq_file != "-" && file.exists(posfreq_file)) {
-    pf <- fread(posfreq_file)
+  if (!is.null(posfreq) && nzchar(posfreq) && posfreq != "-" && file.exists(posfreq)) {
+    pf <- fread(posfreq)
     if ("V4" %in% names(pf)) {
       pf[, var := paste(V1, V2, V4, V5, sep = ":")]
     } else if (all(c("CHROM", "POS", "REF", "ALT") %in% names(pf))) {
       pf[, var := paste(CHROM, POS, REF, ALT, sep = ":")]
     } else {
-      stop("Cannot parse variant keys from posfreq_file: ", posfreq_file)
+      stop("Cannot parse variant keys from posfreq: ", posfreq)
     }
     dt[, label := as.numeric(var %in% pf$var)]
   } else {

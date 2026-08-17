@@ -35,8 +35,8 @@ See `config.example.json`. Relevant keys:
 | `data[].id` | Sample id → looks for `{id}_reads{reads}M` under `mutect_a_vraw/` etc. |
 | `tumor_reads` | Depths to score (same list as pipeline 2) |
 | `model` | Path to XGBoost model (default: `../models/SomaticXGB`) |
-| `posfreq_file` | Optional. PosMix spike list for a `label` column (evaluation). Use `"-"` or omit for blind scoring |
-| `data[].posfreq_file` | Optional per-sample override of the global `posfreq_file` |
+| `posfreq` | Optional. PosMix spike list for a `label` column (evaluation). Use `"-"` or omit for blind scoring |
+| `data[].posfreq` | Optional per-sample override of the global `posfreq` |
 
 BAM paths are **not** used here (features already come from force-calling outputs).
 

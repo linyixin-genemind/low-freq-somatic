@@ -42,12 +42,19 @@ rscript = _resolve(
     config.get("somaticxgb_rscript"),
     default=os.path.join(PIPELINE_DIR, "SomaticXGB.R"),
 )
-# Global default; each sample may override with data[].posfreq_file
-default_posfreq = config.get("posfreq_file", "-")
+# Global default; each sample may override with data[].posfreq
+# (legacy alias "posfreq_file" still accepted).
+default_posfreq = config.get("posfreq")
+if default_posfreq is None:
+    default_posfreq = config.get("posfreq_file", "-")
+    if default_posfreq != "-":
+        print('[posfreq] WARNING: config key "posfreq_file" is deprecated; use "posfreq".')
 
 sample_posfreq = {}
 for pair in config["data"]:
-    pf = pair.get("posfreq_file", default_posfreq)
+    pf = pair.get("posfreq")
+    if pf is None:
+        pf = pair.get("posfreq_file", default_posfreq)
     if pf not in (None, "", "-"):
         pf = _resolve(pf)
     else:

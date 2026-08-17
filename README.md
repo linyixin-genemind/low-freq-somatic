@@ -1,8 +1,11 @@
 # low-freq-somatic
 
-Reproducibility repository for:
+Reproduction repository for the bioRxiv preprint:
 
-> *Assessing and Optimizing Low-Frequency Somatic Mutation Detection: A Multi-Platform High-Throughput Sequencing Perspective*
+> *Assessing and Optimizing Low-Frequency Somatic Mutation Detection: A Multi-Platform High-Throughput Sequencing Perspective*  
+> https://www.biorxiv.org/content/10.64898/2026.05.28.728367v2
+
+**Raw FASTQ data** are deposited in CNGBdb under project [CNP0009527](https://db.cngb.org/data_resources/project/CNP0009527/) (DOI: [10.26036/CNP0009527](https://doi.org/10.26036/CNP0009527)).
 
 Pipeline order matches the manuscript analysis:
 
@@ -26,7 +29,7 @@ FASTQ → (1) fastp + BWA-MEM
 
 ## Workflow paths
 
-Shared start: align with `1.fastp-BWA-pipeline/align.smk`, then PosMix + calling via `2.PosMix-somatic-calling-pipeline/somatic_snv_posmix.smk` (set `posfreq_file` under `pos_files/`). After that, choose a path:
+Shared start: align with `1.fastp-BWA-pipeline/align.smk`, then PosMix + calling via `2.PosMix-somatic-calling-pipeline/somatic_snv_posmix.smk`. Set `"posfreq"` to a **file** (benchmark: same table for all jobs) or a **directory** under `pos_files/` (training: `pf_<id>_reads<N>M.txt` per job). After that, choose a path:
 
 | Goal | What to run next | Config notes |
 |------|------------------|--------------|

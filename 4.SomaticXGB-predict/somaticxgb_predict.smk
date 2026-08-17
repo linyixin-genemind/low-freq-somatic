@@ -1,15 +1,14 @@
 # Apply a trained SomaticXGB model to PosMix + force-calling outputs.
 #
-# Required upstream: 2.PosMix-somatic-calling-pipeline with "features" in callers
-# (run prediction from that same working directory). Without force-calling:
-#   mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz
-#   varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz
-#   varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz
-# will be missing and this pipeline cannot run.
+# Required upstream: 2.PosMix-somatic-calling-pipeline with "features" in callers,
+# in a **per-pair** working directory (pipeline-2 data[].id is the platform name).
 #
-# Usage:
+# Typical usage — cd into that pair's simulation directory:
 #   snakemake -s /path/to/4.SomaticXGB-predict/somaticxgb_predict.smk \
 #       --configfile config.json -j <cores>
+#
+# Or set analysis_dir / data[].analysis_dir / data[].group so several pair
+# directories can be scored in one run without colliding on platform ids.
 
 import os
 
@@ -22,7 +21,6 @@ def _resolve(path, default=None):
         return default
     if os.path.isabs(path):
         return path
-    # Prefer path relative to cwd (analysis dir); fall back to repo root.
     cand = [
         os.path.abspath(path),
         os.path.abspath(os.path.join(REPO_ROOT, path)),
@@ -42,16 +40,30 @@ rscript = _resolve(
     config.get("somaticxgb_rscript"),
     default=os.path.join(PIPELINE_DIR, "SomaticXGB.R"),
 )
-# Global default; each sample may override with data[].posfreq
-# (legacy alias "posfreq_file" still accepted).
+
+default_analysis_dir = config.get("analysis_dir")
+if default_analysis_dir in (None, "", "-"):
+    default_analysis_dir = os.getcwd()
+else:
+    default_analysis_dir = _resolve(default_analysis_dir)
+
 default_posfreq = config.get("posfreq")
 if default_posfreq is None:
     default_posfreq = config.get("posfreq_file", "-")
     if default_posfreq != "-":
         print('[posfreq] WARNING: config key "posfreq_file" is deprecated; use "posfreq".')
 
-sample_posfreq = {}
+# key = "{group}__{id}" so the same platform id can appear for multiple pairs.
+samples = {}
 for pair in config["data"]:
+    sid = pair["id"]
+    group = str(pair.get("group", "run"))
+    key = f"{group}__{sid}"
+    adir = pair.get("analysis_dir", default_analysis_dir)
+    if adir in (None, "", "-"):
+        adir = default_analysis_dir
+    else:
+        adir = _resolve(adir)
     pf = pair.get("posfreq")
     if pf is None:
         pf = pair.get("posfreq_file", default_posfreq)
@@ -59,12 +71,20 @@ for pair in config["data"]:
         pf = _resolve(pf)
     else:
         pf = "-"
-    sample_posfreq[pair["id"]] = pf
+    if key in samples:
+        raise ValueError(f"Duplicate sample key {key}; set distinct data[].group per pair.")
+    samples[key] = {
+        "id": sid,
+        "group": group,
+        "analysis_dir": adir,
+        "posfreq": pf,
+    }
 
-ls = []
-for pair in config["data"]:
-    for reads in config["tumor_reads"]:
-        ls.append(f'pred/{pair["id"]}_reads{reads}M_pred.txt.gz')
+ls = [
+    f"pred/{key}_reads{reads}M_pred.txt.gz"
+    for key in samples
+    for reads in config["tumor_reads"]
+]
 
 
 rule all:
@@ -73,24 +93,45 @@ rule all:
 
 
 rule SomaticXGB:
-    """Extract features from force-calling outputs and score with SomaticXGB."""
-    input:
-        mutect="mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz",
-        varscan="varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz",
-        rc="varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz",
+    """Score one platform×depth job; reads force-calling files from that pair's dir."""
     output:
-        "pred/{id}_reads{reads}M_pred.txt.gz",
+        "pred/{key}_reads{reads}M_pred.txt.gz",
+    wildcard_constraints:
+        reads="[0-9]+",
+        key="[^/]+",
     benchmark:
-        "logs/{id}_reads{reads}M_somaticxgb.benchmark.txt"
+        "logs/{key}_reads{reads}M_somaticxgb.benchmark.txt"
     params:
-        pf=lambda wildcards: sample_posfreq[wildcards.id],
-        name="{id}_reads{reads}M",
-        model=model_path,
         rscript=rscript,
+        model=model_path,
+        adir=lambda wildcards: samples[wildcards.key]["analysis_dir"],
+        sid=lambda wildcards: samples[wildcards.key]["id"],
+        pf=lambda wildcards: samples[wildcards.key]["posfreq"],
+        name=lambda wildcards: f'{samples[wildcards.key]["id"]}_reads{wildcards.reads}M',
+    input:
+        mutect=lambda wildcards: os.path.join(
+            samples[wildcards.key]["analysis_dir"],
+            "mutect_a_vraw",
+            f'{samples[wildcards.key]["id"]}_reads{wildcards.reads}M.raw.vcf.gz',
+        ),
+        varscan=lambda wildcards: os.path.join(
+            samples[wildcards.key]["analysis_dir"],
+            "varscan",
+            f'{samples[wildcards.key]["id"]}_reads{wildcards.reads}M.raw.snp.sort.vcf.gz',
+        ),
+        rc=lambda wildcards: os.path.join(
+            samples[wildcards.key]["analysis_dir"],
+            "varscan_novo",
+            f'{samples[wildcards.key]["id"]}_reads{wildcards.reads}M.raw.snp.vcf.rc.tsv.gz',
+        ),
     shell:
         """
-        mkdir -p pred logs
+        mkdir -p pred logs "{params.adir}/pred"
         test -f {params.model} || {{ echo "Model not found: {params.model}" >&2; exit 1; }}
-        Rscript {params.rscript} {params.name} {params.pf} {params.model}
-        bgzip -f pred/{params.name}_pred.txt
+        (
+          cd "{params.adir}"
+          Rscript {params.rscript} {params.name} {params.pf} {params.model}
+          bgzip -f "pred/{params.name}_pred.txt"
+        )
+        cp -f "{params.adir}/pred/{params.name}_pred.txt.gz" "{output}"
         """

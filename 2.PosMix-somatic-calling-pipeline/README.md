@@ -8,6 +8,8 @@ Snakemake pipeline that combines three pieces:
 
 SomaticXGB **training** and **prediction** are **not** in this directory. They live in `../3.SomaticXGB-training/` and `../4.SomaticXGB-predict/`. Both require outputs produced by enabling `"features"` here.
 
+**Working directory per pair:** example configs use a **platform name** as `data[].id` (e.g. `"SURFSeq_5000"`), so outputs look like `mutect_a_vraw/SURFSeq_5000_reads100M.raw.vcf.gz`. Run **each PosMix pair in its own cwd** (e.g. `…/train/12`, `…/train/13`, `…/test/45`) so different pairs that share a platform id do not overwrite each other. Steps 3–4 read force-calling outputs from those per-pair directories.
+
 ## `posfreq`: file vs directory (auto-detected)
 
 Config key: `"posfreq"`.
@@ -104,16 +106,17 @@ Key `"features"` outputs (per `{id}` / `{reads}`):
     └─► 4.SomaticXGB-predict/    # score candidates with models/SomaticXGB
 ```
 
-- **Train a new model**: run this pipeline on **training** PosMix pairs with `"features"` and a **directory** `posfreq` under `pos_files/train/…`, then follow `../3.SomaticXGB-training/README.md`.
-- **Predict with the released (or your) model**: run this pipeline on the samples to score with `"features"`, then run `../4.SomaticXGB-predict/` in the **same working directory**.
+- **Train a new model**: run this pipeline once per **training** pair under separate dirs (e.g. `…/train/{12,13,…}`) with `"features"` and that pair’s `config.json`, then follow `../3.SomaticXGB-training/README.md` (pass those pair dirs to `build_feature_matrix.R`).
+- **Predict with the released (or your) model**: run this pipeline in the **test pair’s** directory with `"features"`, then run `../4.SomaticXGB-predict/` with `analysis_dir` pointing at that same directory.
 
 
 
 ## Run
 
-From an analysis working directory (BAM paths and `posfreq` set in the config):
+From a **per-pair** analysis working directory. Keep that pair’s pipeline-2 config here (e.g. as `config.json`) — step 3 reuses it:
 
 ```bash
+# example: /path/to/simulations/train/12   or   .../test/45
 snakemake -s /path/to/2.PosMix-somatic-calling-pipeline/somatic_snv_posmix.smk \
   --configfile config.json --cores 120
 ```

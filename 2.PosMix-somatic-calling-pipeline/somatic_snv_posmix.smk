@@ -91,6 +91,9 @@ fileObject.write(jsObj)
 fileObject.close()
 
 # Prefer explicit genome_fasta; fall back to biobase layout used in the original analysis.
+# Run this snakefile from a **per-pair** working directory: data[].id is a platform
+# name (see config.example.json), so separate pairs that share a platform must not
+# share one cwd or outputs collide. Steps 3–4 read each pair directory separately.
 genome_dir = config.get(
     "genome_fasta",
     f"/biobase/data/genome/{config['genome']}/genome.fasta",

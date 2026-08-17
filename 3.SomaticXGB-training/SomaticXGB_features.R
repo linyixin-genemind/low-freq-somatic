@@ -1,13 +1,21 @@
-# Shared feature extraction for SomaticXGB training and prediction.
+# Feature extraction for SomaticXGB (force-calling VCF/TSV → allele-level table).
 #
-# Inputs (relative to the analysis working directory used for pipeline 2):
-#   mutect_a_vraw/<name>.raw.vcf.gz          # Mutect2 force-calling
+# Intended use: with the working directory set to one pipeline-2 pair directory,
+# call extract_somaticxgb_features(name, posfreq) to build and **return** one
+# data.table for that job (does not write a file by itself).
+#
+# Caller:
+#   - build_feature_matrix.R  — setwd(pair_dir) per pair, rbind returned tables
+#   - ../4.SomaticXGB-predict/SomaticXGB.R — same, then score and write pred/
+# Do not duplicate this file under step 4.
+#
+# Inputs (paths relative to the current working directory = that pair dir):
+#   mutect_a_vraw/<name>.raw.vcf.gz
 #   varscan/<name>.raw.snp.sort.vcf.gz
 #   varscan_novo/<name>.raw.snp.vcf.rc.tsv.gz
-#   <posfreq> (optional)                     # PosMix spiked sites → labels
+#   <posfreq> (optional)  — PosMix spiked sites → label column
 #
-# Returns a data.table with allele-level features. When posfreq is
-# provided, adds binary label (1 = spiked site, 0 otherwise).
+# Returns: data.table of allele-level features (+ label when posfreq is given).
 
 SOMATICXGB_FEATURES <- c(
   "DP", "ECNT", "MBQ_REF", "MBQ_ALT", "MFRL_REF", "MFRL_ALT", "MMQ_REF", "MMQ_ALT",

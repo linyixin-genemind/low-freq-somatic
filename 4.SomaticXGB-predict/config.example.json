@@ -1,10 +1,12 @@
 {
   "name": "predict_after_force_calling",
   "model": "../models/SomaticXGB",
+  "analysis_dir": "/path/to/simulations/test/45",
   "posfreq": "../pos_files/test/45/pf45_low.txt",
   "tumor_reads": [60, 80, 100, 120, 140],
   "data": [
     {
+      "group": "45",
       "id": "SURFSeq_5000"
     }
   ]

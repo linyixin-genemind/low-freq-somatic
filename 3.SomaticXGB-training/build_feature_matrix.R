@@ -1,13 +1,26 @@
 #!/usr/bin/env Rscript
 # Build the SomaticXGB training feature matrix from pipeline-2 force-calling outputs.
 #
-# Usage (run from any directory; paths in the config may be relative to this script
-# or absolute — analysis_dir is where mutect_a_vraw/ varscan/ varscan_novo/ live):
+# No separate training config: each PosMix pair keeps the same config.json used for
+# step 2 in that pair's working directory.
 #
-#   Rscript build_feature_matrix.R config.training.json [output.tsv.gz]
+# Usage:
+#   Rscript build_feature_matrix.R <pair_dir> [pair_dir ...] [output.tsv.gz]
 #
-# Each job must already have been produced by 2.PosMix-somatic-calling-pipeline
-# with "features" in callers (HG001-003 training pairs).
+# Example:
+#   Rscript build_feature_matrix.R \
+#     /path/to/simulations/train/12 \
+#     /path/to/simulations/train/13 \
+#     …/train/32 \
+#     feature_matrix.tsv.gz
+#
+# Each <pair_dir> must contain:
+#   config.json                          # the pipeline-2 config for that pair
+#   mutect_a_vraw/{id}_reads{N}M.raw.vcf.gz
+#   varscan/{id}_reads{N}M.raw.snp.sort.vcf.gz
+#   varscan_novo/{id}_reads{N}M.raw.snp.vcf.rc.tsv.gz
+#
+# posfreq / tumor_reads / data[].id are read from that config.json (same keys as step 2).
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -16,107 +29,169 @@ suppressPackageStartupMessages({
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 1) {
-  stop("Usage: Rscript build_feature_matrix.R <config.training.json> [output.tsv.gz]")
+  stop(
+    "Usage: Rscript build_feature_matrix.R <pair_dir> [pair_dir ...] [output.tsv.gz]\n",
+    "Each pair_dir is a pipeline-2 working directory with its config.json."
+  )
 }
 
-config_path <- normalizePath(args[1])
-out_path <- if (length(args) >= 2) args[2] else "feature_matrix.tsv.gz"
-
-cfg <- fromJSON(config_path, simplifyVector = TRUE)
-analysis_dir <- cfg$analysis_dir
-if (is.null(analysis_dir) || !dir.exists(analysis_dir)) {
-  stop("config$analysis_dir must exist (directory with mutect_a_vraw/, varscan/, …): ", analysis_dir)
+out_path <- "feature_matrix.tsv.gz"
+pair_dirs <- args
+if (grepl("\\.(tsv|txt|csv)(\\.gz)?$", args[length(args)], ignore.case = TRUE)) {
+  out_path <- args[length(args)]
+  pair_dirs <- args[-length(args)]
+}
+if (!length(pair_dirs)) {
+  stop("Provide at least one pair directory (pipeline-2 cwd with config.json).")
 }
 
-# Resolve feature extractor relative to this repo layout.
 script_dir <- {
   ca <- commandArgs(trailingOnly = FALSE)
   file_arg <- grep("^--file=", ca, value = TRUE)
   if (length(file_arg) == 1) dirname(normalizePath(sub("^--file=", "", file_arg))) else getwd()
 }
 repo_root <- normalizePath(file.path(script_dir, ".."))
-features_r <- file.path(repo_root, "4.SomaticXGB-predict", "SomaticXGB_features.R")
+features_r <- file.path(script_dir, "SomaticXGB_features.R")
 if (!file.exists(features_r)) {
   stop("Cannot find SomaticXGB_features.R at ", features_r)
 }
 source(features_r)
 
-# Expand compact pairs × depths into jobs if "jobs" is absent.
-expand_jobs <- function(cfg) {
-  if (!is.null(cfg$jobs) && length(cfg$jobs)) {
-    jobs <- as.data.table(cfg$jobs)
-    # jsonlite may return a single job as a named list
-    if (!is.data.frame(cfg$jobs) && is.null(jobs$name) && !is.null(cfg$jobs$name)) {
-      jobs <- as.data.table(lapply(cfg$jobs, function(x) x))
+find_pair_config <- function(pair_dir) {
+  candidates <- c(
+    file.path(pair_dir, "config.json"),
+    file.path(pair_dir, "config.posmix.json"),
+    file.path(pair_dir, "config.example.json")
+  )
+  hit <- candidates[file.exists(candidates)]
+  if (!length(hit)) {
+    # fallback: any *.json that looks like a pipeline-2 config
+    jsons <- list.files(pair_dir, pattern = "\\.json$", full.names = TRUE)
+    for (j in jsons) {
+      cfg <- tryCatch(fromJSON(j, simplifyVector = TRUE), error = function(e) NULL)
+      if (!is.null(cfg) && !is.null(cfg$data) && !is.null(cfg$tumor_reads) &&
+          (!is.null(cfg$posfreq) || !is.null(cfg$posfreq_file))) {
+        hit <- j
+        break
+      }
     }
-    return(jobs)
   }
-  if (is.null(cfg$pairs) || is.null(cfg$tumor_reads)) {
-    stop("Config must provide either 'jobs' or both 'pairs' and 'tumor_reads'")
+  if (!length(hit)) {
+    stop(
+      "No pipeline-2 config found under ", pair_dir,
+      "\nExpected config.json (the same file passed to snakemake --configfile)."
+    )
   }
-  pairs <- as.data.table(cfg$pairs)
-  if (!nrow(pairs) && !is.null(cfg$pairs$group)) {
-    pairs <- as.data.table(cfg$pairs)
+  normalizePath(hit[[1]])
+}
+
+resolve_path <- function(path, pair_dir, config_path) {
+  if (is.null(path) || !nzchar(path) || identical(path, "-")) return(NULL)
+  if (grepl("^/", path) && (file.exists(path) || dir.exists(path))) {
+    return(normalizePath(path))
   }
-  reads <- cfg$tumor_reads
-  pf_tmpl <- cfg$posfreq_template
-  if (is.null(pf_tmpl)) {
-    pf_tmpl <- "{pos_files}/train/{group}/pf_{id}_reads{reads}M.txt"
+  cand <- c(
+    file.path(pair_dir, path),
+    file.path(dirname(config_path), path),
+    path,
+    file.path(repo_root, path)
+  )
+  hit <- cand[file.exists(cand) | dir.exists(cand)]
+  if (!length(hit)) return(NULL)
+  normalizePath(hit[[1]])
+}
+
+resolve_posfreq_for_job <- function(posfreq_path, sample_id, reads) {
+  if (is.null(posfreq_path)) {
+    stop("config must set \"posfreq\" (file or directory), same as pipeline 2")
   }
-  pos_files <- cfg$pos_files
-  if (is.null(pos_files)) {
-    pos_files <- file.path(repo_root, "pos_files")
+  if (dir.exists(posfreq_path)) {
+    path <- file.path(posfreq_path, sprintf("pf_%s_reads%sM.txt", sample_id, reads))
+    if (!file.exists(path)) {
+      stop("No posfreq file for id=", sample_id, " reads=", reads, "M under ", posfreq_path,
+           "\nExpected: ", path)
+    }
+    return(normalizePath(path))
+  }
+  if (file.exists(posfreq_path)) return(normalizePath(posfreq_path))
+  stop("posfreq path not found (file or directory): ", posfreq_path)
+}
+
+# Infer pair tag from directory name (…/train/12 → "12") for the group column.
+pair_group_from_dir <- function(pair_dir) {
+  basename(normalizePath(pair_dir))
+}
+
+jobs_from_pair_dir <- function(pair_dir) {
+  pair_dir <- normalizePath(pair_dir)
+  if (!dir.exists(pair_dir)) stop("pair directory not found: ", pair_dir)
+  config_path <- find_pair_config(pair_dir)
+  cfg <- fromJSON(config_path, simplifyVector = TRUE)
+
+  if (is.null(cfg$callers) || !("features" %in% cfg$callers)) {
+    warning(
+      "Pipeline-2 config for ", pair_dir,
+      " does not list \"features\" in callers; force-calling outputs may be missing."
+    )
   }
 
-  jobs <- rbindlist(lapply(seq_len(nrow(pairs)), function(i) {
-    p <- pairs[i]
+  posfreq_raw <- cfg$posfreq
+  if (is.null(posfreq_raw)) posfreq_raw <- cfg$posfreq_file
+  posfreq_path <- resolve_path(posfreq_raw, pair_dir, config_path)
+  if (is.null(posfreq_path)) {
+    stop("Cannot resolve posfreq from ", config_path, ": ", posfreq_raw)
+  }
+
+  if (is.null(cfg$tumor_reads) || !length(cfg$tumor_reads)) {
+    stop("config tumor_reads missing in ", config_path)
+  }
+  if (is.null(cfg$data) || !length(cfg$data)) {
+    stop("config data[] missing in ", config_path)
+  }
+
+  data <- cfg$data
+  # jsonlite: one sample → named list; several → data.frame
+  if (is.data.frame(data)) {
+    ids <- as.character(data$id)
+  } else if (!is.null(data$id)) {
+    ids <- as.character(data$id)
+  } else {
+    ids <- vapply(data, function(x) as.character(x$id), character(1))
+  }
+
+  group <- pair_group_from_dir(pair_dir)
+  reads <- cfg$tumor_reads
+
+  rbindlist(lapply(ids, function(sid) {
     rbindlist(lapply(reads, function(r) {
-      name <- paste0(p$id, "_reads", r, "M")
-      pf <- pf_tmpl
-      pf <- gsub("\\{pos_files\\}", pos_files, pf)
-      pf <- gsub("\\{group\\}", p$group, pf)
-      pf <- gsub("\\{id\\}", p$id, pf)
-      pf <- gsub("\\{reads\\}", as.character(r), pf)
       data.table(
-        name = name,
-        posfreq = pf,
-        group = as.character(p$group)
+        name = paste0(sid, "_reads", r, "M"),
+        posfreq = resolve_posfreq_for_job(posfreq_path, sid, r),
+        group = group,
+        analysis_dir = pair_dir,
+        config_path = config_path
       )
     }))
   }))
-  jobs
 }
 
-jobs <- expand_jobs(cfg)
-if (!("posfreq" %in% names(jobs)) && ("posfreq_file" %in% names(jobs))) {
-  message('WARNING: job column "posfreq_file" is deprecated; use "posfreq".')
-  setnames(jobs, "posfreq_file", "posfreq")
-}
-required <- c("name", "posfreq")
-miss <- setdiff(required, names(jobs))
-if (length(miss)) stop("Each job needs columns: ", paste(required, collapse = ", "))
+jobs <- rbindlist(lapply(pair_dirs, jobs_from_pair_dir))
+message("Jobs: ", nrow(jobs), " from ", length(pair_dirs), " pair director",
+        if (length(pair_dirs) == 1) "y" else "ies")
 
 old_wd <- getwd()
-setwd(analysis_dir)
 on.exit(setwd(old_wd), add = TRUE)
 
 parts <- list()
 for (i in seq_len(nrow(jobs))) {
   job <- jobs[i]
   name <- job$name
+  adir <- job$analysis_dir
   pf <- job$posfreq
-  if (!grepl("^/", pf)) {
-    # Allow paths relative to repo root or config file directory.
-    cand <- c(
-      pf,
-      file.path(dirname(config_path), pf),
-      file.path(repo_root, pf)
-    )
-    hit <- cand[file.exists(cand)]
-    if (!length(hit)) stop("posfreq not found for ", name, ": ", pf)
-    pf <- normalizePath(hit[[1]])
-  }
-  message(sprintf("[%d/%d] %s", i, nrow(jobs), name))
+
+  message(sprintf("[%d/%d] %s  (dir=%s)", i, nrow(jobs), name, adir))
+  setwd(adir)
+
   needed <- c(
     paste0("mutect_a_vraw/", name, ".raw.vcf.gz"),
     paste0("varscan/", name, ".raw.snp.sort.vcf.gz"),
@@ -125,16 +200,17 @@ for (i in seq_len(nrow(jobs))) {
   missing <- needed[!file.exists(needed)]
   if (length(missing)) {
     stop(
-      "Missing force-calling / feature inputs under ", analysis_dir, ":\n  ",
+      "Missing force-calling / feature inputs under ", adir, ":\n  ",
       paste(missing, collapse = "\n  "),
-      "\nRun 2.PosMix-somatic-calling-pipeline with callers including \"features\" first."
+      "\nRun 2.PosMix-somatic-calling-pipeline here with callers including \"features\"."
     )
   }
   dt <- extract_somaticxgb_features(name, pf)
-  if ("group" %in% names(job) && !is.na(job$group)) dt[, group := as.character(job$group)]
+  dt[, group := as.character(job$group)]
   parts[[length(parts) + 1L]] <- dt
 }
 
+setwd(old_wd)
 dtm <- rbindlist(parts, use.names = TRUE, fill = TRUE)
 message("Feature matrix: ", nrow(dtm), " rows, ", sum(dtm$label == 1), " positives")
 

@@ -1,75 +1,64 @@
 # SomaticXGB training
 
-Build a labeled feature matrix from HG001-003 **force-calling** outputs, tune hyperparameters with 5-fold CV, and train the final XGBoost model.
+Build a labeled feature matrix from HG001–003 **force-calling** outputs, tune hyperparameters with 5-fold CV, and train the final XGBoost model.
 
 ## Prerequisite (required)
 
-Training does **not** start from ordinary Mutect2 / Strelka2 / VarScan2 call sets alone.
+Training does **not** start from ordinary Mutect2 / Strelka2 / VarScan2 call sets alone. There is **no** separate training config — step 3 reuses each pair’s **pipeline-2** `config.json`.
 
-1. Run `../2.PosMix-somatic-calling-pipeline/` on the **training** PosMix pairs (`pos_files/train/{12,13,21,23,31,32}/`) with `"features"` in `callers`, e.g.:
+Run `../2.PosMix-somatic-calling-pipeline/` **once per PosMix pair**, with `"features"` in `callers`, e.g.:
 
 ```json
 "callers": ["varscan", "varscan_novo", "features"]
 ```
 
-1. That writes, for each `{id}_reads{reads}M`:
+Pipeline-2 example configs use a **platform name** as `data[].id` (e.g. `"SURFSeq_5000"`), not a pair tag. Output files are therefore named `{id}_reads{N}M…`. If two pairs (e.g. `12` and `13`) share the same platform `id` in one working directory, they **overwrite each other**.
 
-- `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz` — Mutect2 force-called VCF
-- `varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz`
-- `varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz`
+**Use a separate simulation working directory per pair**, and keep that pair’s step-2 config inside it:
 
-Without `"features"`, force-calling is skipped and the steps below cannot run.
+```
+{analysis_root}/train/12/
+    config.json              ← same file used as snakemake --configfile
+    mutect_a_vraw/…
+    varscan/…
+    varscan_novo/…
+{analysis_root}/train/13/
+    config.json
+    …
+```
 
-**Note on sample IDs:** output names are `{id}_reads{reads}M`, and directory-mode posfreq files must be `pf_{id}_reads{reads}M.txt`. Keep the same `id` in pipeline 2 and here.
+From each `config.json`, step 3 reads `data[].id`, `tumor_reads`, and `posfreq` (file or directory — same rules as pipeline 2). Without `"features"`, force-calling is skipped and training cannot run.
 
 ## Workflow
 
 ```
-force-calling VCFs (pipeline 2 + "features")
-        │
-        ▼
-build_feature_matrix.R   ← shared extractor in 4.SomaticXGB-predict/SomaticXGB_features.R
-        │
-        ▼
-feature_matrix.tsv.gz
+per-pair dirs (pipeline 2 config.json + "features" outputs)
         │
         ▼
 notebooks/train_SomaticXGB.ipynb
+   • calls build_feature_matrix.R
+        └─ sources SomaticXGB_features.R   ← library; not run alone
+   • writes feature_matrix.tsv.gz
    • 5-fold CV grid search (PR-AUC)
    • final model fit + xgb.save
 ```
 
+`SomaticXGB_features.R` is a **library**, not a CLI. `build_feature_matrix.R` (and step 4’s `SomaticXGB.R`) `source()` it and call `extract_somaticxgb_features()`.
 
+## Train in the notebook
 
-### 1. Configure jobs
+1. Open `notebooks/train_SomaticXGB.ipynb`.
+2. Edit `pair_dirs` to your pipeline-2 pair working directories (each with `config.json` + force-calling outputs).
+3. Run all cells:
 
-```bash
-cp config.training.example.json config.training.json
-# edit analysis_dir, pairs (group / id), tumor_reads
-```
+| Step | What it does |
+|------|----------------|
+| Build matrix | Calls `build_feature_matrix.R` on `pair_dirs` (reads each pair’s step-2 config, `cd`s there, extracts features) |
+| CV tune | Grid over `max_depth ∈ {3,5,7,9}`, `eta ∈ {0.01,0.05,0.1,0.2}`, `nrounds ∈ {100,200,400}`; 5-fold; median PR-AUC |
+| Final train | Fits on **all** rows; default hyperparameters match the manuscript (`7` / `0.1` / `400`) |
+| Outputs | `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, model under `../models/` |
 
-Compact form expands `pairs` × `tumor_reads` using `posfreq_template`. You can instead supply an explicit `jobs` array of `{name, posfreq, group}`.
-
-### 2. Build the matrix (optional standalone)
-
-```bash
-Rscript build_feature_matrix.R config.training.json feature_matrix.tsv.gz
-```
-
-The training notebook runs this for you if `feature_matrix.tsv.gz` is built via the notebook cell.
-
-### 3. Train in the notebook
-
-Open `notebooks/train_SomaticXGB.ipynb` and run all cells:
-
-
-| Step         | What it does                                                                                                     |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Build matrix | Calls `build_feature_matrix.R` on HG001-003 force-calling outputs                                                |
-| CV tune      | Grid over `max_depth ∈ {3,5,7,9}`, `eta ∈ {0.01,0.05,0.1,0.2}`, `nrounds ∈ {100,200,400}`; 5-fold; median PR-AUC |
-| Final train  | Fits on **all** rows; default hyperparameters match the manuscript (`7` / `0.1` / `400`)                         |
-| Outputs      | `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, model under `../models/`                                      |
-
+If you already have `feature_matrix.tsv.gz`, you can skip the build cell and `fread` it instead.
 
 Reference tables from the original analysis (`med_auc_0820.xls`, `importance_0820.txt`) remain in this directory for comparison.
 
@@ -86,4 +75,4 @@ Features match Supplementary Table 4 / `importance_0820.txt`.
 
 ## Prediction (no retraining)
 
-Skip this directory and use `../4.SomaticXGB-predict/` with the released or newly saved model. Prediction inputs must also come from pipeline 2 with `"features"`.
+Skip this directory and use `../4.SomaticXGB-predict/` with the released or newly saved model. Run prediction against the **same per-pair simulation directory** (and its pipeline-2 config) used for that test/held-out pair (e.g. `{analysis_root}/test/45`).

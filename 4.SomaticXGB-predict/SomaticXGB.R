@@ -4,7 +4,8 @@
 # Usage:
 #   Rscript SomaticXGB.R <sample_readsName> <posfreq|-> <model_path>
 #
-# Run from the same analysis working directory used for pipeline 2 ("features").
+# Run from the pair's simulation working directory (pipeline-2 cwd for that pair),
+# or let somaticxgb_predict.smk cd there via analysis_dir.
 # Expects:
 #   mutect_a_vraw/<name>.raw.vcf.gz
 #   varscan/<name>.raw.snp.sort.vcf.gz
@@ -44,7 +45,12 @@ script_dir <- if (length(file_arg) == 1) {
   getwd()
 }
 
-source(file.path(script_dir, "SomaticXGB_features.R"))
+# Reuse the canonical feature extractor from step 3 (training).
+features_r <- file.path(script_dir, "..", "3.SomaticXGB-training", "SomaticXGB_features.R")
+if (!file.exists(features_r)) {
+  stop("Cannot find shared extractor: ", normalizePath(features_r, mustWork = FALSE))
+}
+source(features_r)
 
 dtm <- extract_somaticxgb_features(name, posfreq)
 

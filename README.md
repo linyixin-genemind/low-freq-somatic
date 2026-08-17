@@ -23,7 +23,7 @@ FASTQ → (1) fastp + BWA-MEM
 | `1.fastp-BWA-pipeline/` | Read QC (`fastp`) and alignment (`BWA-MEM` to GRCh37) |
 | `2.PosMix-somatic-calling-pipeline/` | PosMix + Mutect2 / Strelka2 / VarScan2; optional `"features"` enables force-calling for SomaticXGB |
 | `3.SomaticXGB-training/` | Feature extractor + build matrix (per-pair dirs) → CV tune → train SomaticXGB |
-| `4.SomaticXGB-predict/` | Score with a trained / released model (reads each pair’s simulation dir; sources step-3 features) |
+| `4.SomaticXGB-predict/` | Notebook: reuse step-3 `build_feature_matrix.R`, then load model and score |
 | `pos_files/` | Position–frequency tables for PosMix (`train/` = HG001-003, `test/` = HG004-005) |
 | `models/SomaticXGB` | Released XGBoost model |
 
@@ -35,7 +35,7 @@ Shared start: align with `1.fastp-BWA-pipeline/align.smk`, then PosMix + calling
 |------|------------------|--------------|
 | PosMix + callers only (**no** model) | Stop after `2.…` | `callers` **without** `"features"` — see `config.callers-only.example.json` |
 | Train SomaticXGB | `2.…` **per pair dir** → `3.SomaticXGB-training/` | Step 2: `"features"` + per-pair `config.json`. Step 3 reads those configs (no separate training config) |
-| Predict with existing / released model | `2.…` **per pair dir** → `4.SomaticXGB-predict/` | Step 2: `"features"`; step 4: `analysis_dir` = that pair’s simulation directory |
+| Predict with existing / released model | `2.…` **per pair dir** → `4.SomaticXGB-predict/predict_SomaticXGB.ipynb` | Step 2: `"features"`; notebook reuses step-3 matrix builder, then scores |
 
 For `callers` lists and run commands, see each subdirectory README (especially `2.PosMix-somatic-calling-pipeline/README.md`).
 

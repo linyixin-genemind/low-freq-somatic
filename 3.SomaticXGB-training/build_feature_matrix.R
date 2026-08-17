@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
-# Build the SomaticXGB training feature matrix from pipeline-2 force-calling outputs.
+# Build the SomaticXGB feature matrix from pipeline-2 force-calling outputs
+# (shared by train_SomaticXGB.ipynb and predict_SomaticXGB.ipynb).
 #
 # No separate training config: each PosMix pair keeps the same config.json used for
 # step 2 in that pair's working directory.
@@ -9,8 +10,8 @@
 #
 # Example:
 #   Rscript build_feature_matrix.R \
-#     /path/to/simulations/train/12 \
-#     /path/to/simulations/train/13 \
+#     /path/to/train/12 \
+#     /path/to/train/13 \
 #     …/train/32 \
 #     feature_matrix.tsv.gz
 #
@@ -28,6 +29,8 @@ suppressPackageStartupMessages({
 })
 
 args <- commandArgs(trailingOnly = TRUE)
+
+
 if (length(args) < 1) {
   stop(
     "Usage: Rscript build_feature_matrix.R <pair_dir> [pair_dir ...] [output.tsv.gz]\n",
@@ -45,60 +48,43 @@ if (!length(pair_dirs)) {
   stop("Provide at least one pair directory (pipeline-2 cwd with config.json).")
 }
 
-script_dir <- {
-  ca <- commandArgs(trailingOnly = FALSE)
-  file_arg <- grep("^--file=", ca, value = TRUE)
-  if (length(file_arg) == 1) dirname(normalizePath(sub("^--file=", "", file_arg))) else getwd()
+# Expect to be invoked as:
+#   Rscript /path/to/3.SomaticXGB-training/build_feature_matrix.R ...
+# so sibling SomaticXGB_features.R is found even if cwd is step 4.
+ca <- commandArgs(trailingOnly = FALSE)
+file_arg <- grep("^--file=", ca, value = TRUE)
+script_dir <- if (length(file_arg) == 1) {
+  dirname(normalizePath(sub("^--file=", "", file_arg)))
+} else {
+  getwd()
 }
-repo_root <- normalizePath(file.path(script_dir, ".."))
 features_r <- file.path(script_dir, "SomaticXGB_features.R")
 if (!file.exists(features_r)) {
-  stop("Cannot find SomaticXGB_features.R at ", features_r)
+  stop("SomaticXGB_features.R not found next to build_feature_matrix.R at ", script_dir)
 }
 source(features_r)
 
 find_pair_config <- function(pair_dir) {
-  candidates <- c(
-    file.path(pair_dir, "config.json"),
-    file.path(pair_dir, "config.posmix.json"),
-    file.path(pair_dir, "config.example.json")
-  )
-  hit <- candidates[file.exists(candidates)]
-  if (!length(hit)) {
-    # fallback: any *.json that looks like a pipeline-2 config
-    jsons <- list.files(pair_dir, pattern = "\\.json$", full.names = TRUE)
-    for (j in jsons) {
-      cfg <- tryCatch(fromJSON(j, simplifyVector = TRUE), error = function(e) NULL)
-      if (!is.null(cfg) && !is.null(cfg$data) && !is.null(cfg$tumor_reads) &&
-          (!is.null(cfg$posfreq) || !is.null(cfg$posfreq_file))) {
-        hit <- j
-        break
-      }
-    }
-  }
-  if (!length(hit)) {
+  config_path <- file.path(pair_dir, "config.json")
+  if (!file.exists(config_path)) {
     stop(
-      "No pipeline-2 config found under ", pair_dir,
-      "\nExpected config.json (the same file passed to snakemake --configfile)."
+      "Missing config.json under ", pair_dir,
+      "\nEach pair directory must contain the pipeline-2 config.json."
     )
   }
-  normalizePath(hit[[1]])
+  normalizePath(config_path)
 }
 
-resolve_path <- function(path, pair_dir, config_path) {
+# Absolute path as-is; relative path is resolved against the pair directory.
+resolve_path <- function(path, pair_dir) {
   if (is.null(path) || !nzchar(path) || identical(path, "-")) return(NULL)
-  if (grepl("^/", path) && (file.exists(path) || dir.exists(path))) {
-    return(normalizePath(path))
+  if (grepl("^/", path)) {
+    if (file.exists(path) || dir.exists(path)) return(normalizePath(path))
+    return(NULL)
   }
-  cand <- c(
-    file.path(pair_dir, path),
-    file.path(dirname(config_path), path),
-    path,
-    file.path(repo_root, path)
-  )
-  hit <- cand[file.exists(cand) | dir.exists(cand)]
-  if (!length(hit)) return(NULL)
-  normalizePath(hit[[1]])
+  full <- file.path(pair_dir, path)
+  if (file.exists(full) || dir.exists(full)) return(normalizePath(full))
+  NULL
 }
 
 resolve_posfreq_for_job <- function(posfreq_path, sample_id, reads) {
@@ -137,9 +123,9 @@ jobs_from_pair_dir <- function(pair_dir) {
 
   posfreq_raw <- cfg$posfreq
   if (is.null(posfreq_raw)) posfreq_raw <- cfg$posfreq_file
-  posfreq_path <- resolve_path(posfreq_raw, pair_dir, config_path)
+  posfreq_path <- resolve_path(posfreq_raw, pair_dir)
   if (is.null(posfreq_path)) {
-    stop("Cannot resolve posfreq from ", config_path, ": ", posfreq_raw)
+    stop("Cannot resolve posfreq from ", config_path, " relative to ", pair_dir, ": ", posfreq_raw)
   }
 
   if (is.null(cfg$tumor_reads) || !length(cfg$tumor_reads)) {

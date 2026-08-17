@@ -1,12 +1,10 @@
-# Feature extraction for SomaticXGB (force-calling VCF/TSV → allele-level table).
-#
 # Intended use: with the working directory set to one pipeline-2 pair directory,
 # call extract_somaticxgb_features(name, posfreq) to build and **return** one
 # data.table for that job (does not write a file by itself).
 #
-# Caller:
+# Callers:
 #   - build_feature_matrix.R  — setwd(pair_dir) per pair, rbind returned tables
-#   - ../4.SomaticXGB-predict/SomaticXGB.R — same, then score and write pred/
+#     (used by train_SomaticXGB.ipynb and predict_SomaticXGB.ipynb)
 # Do not duplicate this file under step 4.
 #
 # Inputs (paths relative to the current working directory = that pair dir):

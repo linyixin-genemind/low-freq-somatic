@@ -44,7 +44,7 @@ train_SomaticXGB.ipynb          ← this directory
    • final model fit + xgb.save
 ```
 
-`SomaticXGB_features.R` is a **library**, not a CLI. `build_feature_matrix.R` (and step 4’s `SomaticXGB.R`) `source()` it and call `extract_somaticxgb_features()`.
+`SomaticXGB_features.R` is a **library**, not a CLI. `build_feature_matrix.R` (used by both train and predict notebooks) `source()`s it and calls `extract_somaticxgb_features()`.
 
 ## Train in the notebook
 
@@ -76,4 +76,4 @@ Features match Supplementary Table 4 / `importance_0820.txt`. Retraining via the
 
 ## Prediction (no retraining)
 
-Skip this directory and use `../4.SomaticXGB-predict/` with the released or newly saved model. Run prediction against the **same per-pair simulation directory** (and its pipeline-2 config) used for that test/held-out pair (e.g. `{analysis_root}/test/45`).
+Open `../4.SomaticXGB-predict/predict_SomaticXGB.ipynb`. It calls this directory’s `build_feature_matrix.R` on the test pair dirs, then loads a model and writes `predictions.tsv.gz`.

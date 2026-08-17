@@ -107,7 +107,7 @@ Key `"features"` outputs (per `{id}` / `{reads}`):
 ```
 
 - **Train a new model**: run this pipeline once per **training** pair under separate dirs (e.g. `…/train/{12,13,…}`) with `"features"` and that pair’s `config.json`, then follow `../3.SomaticXGB-training/README.md` (pass those pair dirs to `build_feature_matrix.R`).
-- **Predict with the released (or your) model**: run this pipeline in the **test pair’s** directory with `"features"`, then run `../4.SomaticXGB-predict/` with `analysis_dir` pointing at that same directory.
+- **Predict with the released (or your) model**: run this pipeline in the **test pair’s** directory with `"features"`, then open `../4.SomaticXGB-predict/predict_SomaticXGB.ipynb` (reuses step-3 `build_feature_matrix.R`, then scores).
 
 
 

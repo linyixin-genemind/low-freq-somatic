@@ -96,21 +96,6 @@ Key `"features"` outputs (per `{id}` / `{reads}`):
 - `varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz`
 - `varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz`
 
-
-
-## Downstream paths after this pipeline
-
-```
-2.PosMix… (with "features")
-    ├─► 3.SomaticXGB-training/   # rebuild feature matrix → tune / train
-    └─► 4.SomaticXGB-predict/    # score candidates with models/SomaticXGB
-```
-
-- **Train a new model**: run this pipeline once per **training** pair under separate dirs (e.g. `…/train/{12,13,…}`) with `"features"` and that pair’s `config.json`, then follow `../3.SomaticXGB-training/README.md` (pass those pair dirs to `build_feature_matrix.R`).
-- **Predict with the released (or your) model**: run this pipeline in the **test pair’s** directory with `"features"`, then open `../4.SomaticXGB-predict/predict_SomaticXGB.ipynb` (reuses step-3 `build_feature_matrix.R`, then scores).
-
-
-
 ## Run
 
 From a **per-pair** analysis working directory. Keep that pair’s pipeline-2 config here (e.g. as `config.json`) — step 3 reuses it:

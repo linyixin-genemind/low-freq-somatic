@@ -35,10 +35,11 @@ From each `config.json`, step 3 reads `data[].id`, `tumor_reads`, and `posfreq` 
 per-pair dirs (pipeline 2 config.json + "features" outputs)
         │
         ▼
-notebooks/train_SomaticXGB.ipynb
+train_SomaticXGB.ipynb          ← this directory
    • calls build_feature_matrix.R
         └─ sources SomaticXGB_features.R   ← library; not run alone
-   • writes feature_matrix.tsv.gz
+   • writes feature_matrix.tsv.gz, cv_results.tsv, med_auc.tsv,
+     importance.tsv, SomaticXGB_retrained  (all in this directory)
    • 5-fold CV grid search (PR-AUC)
    • final model fit + xgb.save
 ```
@@ -47,7 +48,7 @@ notebooks/train_SomaticXGB.ipynb
 
 ## Train in the notebook
 
-1. Open `notebooks/train_SomaticXGB.ipynb`.
+1. Open `train_SomaticXGB.ipynb` in this directory (`3.SomaticXGB-training/`).
 2. Edit `pair_dirs` to your pipeline-2 pair working directories (each with `config.json` + force-calling outputs).
 3. Run all cells:
 
@@ -56,7 +57,7 @@ notebooks/train_SomaticXGB.ipynb
 | Build matrix | Calls `build_feature_matrix.R` on `pair_dirs` (reads each pair’s step-2 config, `cd`s there, extracts features) |
 | CV tune | Grid over `max_depth ∈ {3,5,7,9}`, `eta ∈ {0.01,0.05,0.1,0.2}`, `nrounds ∈ {100,200,400}`; 5-fold; median PR-AUC |
 | Final train | Fits on **all** rows; default hyperparameters match the manuscript (`7` / `0.1` / `400`) |
-| Outputs | `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, model under `../models/` |
+| Outputs | In this directory: `feature_matrix.tsv.gz`, `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, `SomaticXGB_retrained` |
 
 If you already have `feature_matrix.tsv.gz`, you can skip the build cell and `fread` it instead.
 
@@ -64,14 +65,14 @@ Reference tables from the original analysis (`med_auc_0820.xls`, `importance_082
 
 ## Released model
 
-`../models/SomaticXGB` was trained with:
+The manuscript release lives at `../models/SomaticXGB`, trained with:
 
 - `max.depth = 7`
 - `eta = 0.1`
 - `nrounds = 400`
 - `objective = "binary:logistic"`
 
-Features match Supplementary Table 4 / `importance_0820.txt`.
+Features match Supplementary Table 4 / `importance_0820.txt`. Retraining via the notebook writes `SomaticXGB_retrained` here.
 
 ## Prediction (no retraining)
 

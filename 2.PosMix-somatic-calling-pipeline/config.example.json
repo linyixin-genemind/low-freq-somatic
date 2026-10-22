@@ -4,7 +4,7 @@
   "genome_fasta": "/path/to/GRCh37/genome.fasta",
   "min_freq": 0.0025,
   "callers": ["varscan", "varscan_novo", "features"],
-  "bed_file": "bed/panel/intersect_HG001_HG002_panel.sort.bed",
+  "bed_file": "bed/intersect_HG001_HG002_panel.sort.bed",
   "posfreq": "../pos_files/train/12",
   "seed": 700,
   "tumor_reads": [50, 75, 100, 125, 150],

@@ -106,4 +106,4 @@ snakemake -s /path/to/2.PosMix-somatic-calling-pipeline/somatic_snv_posmix.smk \
   --configfile config.json --cores 120
 ```
 
-Panel BEDs are under `bed/panel/`.
+Panel BEDs are under `bed/`.

@@ -15,7 +15,7 @@ See `../2.PosMix-somatic-calling-pipeline/README.md`.
 pos_files/
   train/          # HG001-003 pairs (manuscript training set; diverse tables)
     12/ 13/ 21/ 23/ 31/ 32/
-      pf_<id>_reads<N>M.txt          # PosMix tables (sites + target VAFs); <id> = pipeline data[].id
+      pf_<id>_reads<N>M.txt          # PosMix tables (mixing proportions + target VAFs); <id> = pipeline data[].id
       only*.txt                     # donor-private site lists (no mixing ratios / VAFs)
   test/           # HG004-005 pairs (manuscript test / benchmark-style tables)
     45/pf45_low.txt
@@ -26,16 +26,27 @@ Pair IDs encode donor/background reference samples, e.g. `12` = HG001 reads mixe
 
 This repository already includes **all** PosMix tables used for the manuscript training runs under `train/`. Prefer those files when reproducing training.
 
-- **Use for PosMix / config `"posfreq"`**: `train/.../pf_*.txt` or `test/.../pf*.txt` (include target frequencies).
+- **Use for PosMix / config `"posfreq"`**: `train/.../pf_*.txt` or `test/.../pf*.txt` (include donor-read mixing proportions and target VAFs).
 - **Site list only (no VAF)**: `train/<pair>/only*.txt` — donor-private germline sites for that pair, without mixing proportions.
 
 ## Format
 
-Tab-delimited columns (no header), typically:
+`pf_*.txt` tables are tab-delimited and have **no header**:
 
-`CHROM  POS  P  REF  ALT  GT  f  b  GT2  group  AF`
+`CHROM  POS  P  REF  ALT  GT  f  b  GT2  group  VAF`
 
-`P` / `AF` are the target allele frequencies for PosMix.
+The related `only*.txt` site lists include a header (`CHROM POS REF ALT GT f b GT2 group`) and omit `P` / `VAF`.
+
+Column meaning for the VAF/mixing calculation:
+
+- `GT`: donor germline genotype at the spike site (e.g. `0/1`, `1/1`).
+- `VAF`: intended target somatic VAF after mixing.
+- `GT2`: donor-allele dosage multiplier, i.e. `1 / a_d`, where `a_d` is the donor allele fraction implied by `GT` (`2` for heterozygous `0/1`, `1` for homozygous `1/1`).
+- `P`: donor-read mixing proportion passed to PosMix, computed as `P = VAF × GT2` (equivalently `P = VAF / a_d`). Heterozygous sites therefore use `P = 2 × VAF`; homozygous sites use `P = VAF`.
+- `f` / `b`: distance in bp to the previous / next candidate site on the same chromosome (`Inf` at chromosome boundaries). These spacing fields do not change the `P = VAF × GT2` conversion.
+- `group`: spacing-group identifier. Consecutive candidate sites on the same chromosome are grouped when their gap is below the ~300 bp grouping window; in the released tables, observed same-group gaps are <=297 bp and new-group gaps are >=301 bp. All rows in a multi-site group share the same `P`. If `GT2` differs within a group, identical `P` implies different `VAF` values; the grouping invariant is `P`, not necessarily `VAF`.
+
+Example (`train/12/pf_FASTASeq_300_reads50M.txt`): a heterozygous row with `VAF=0.011` has `GT2=2` and `P=0.022`; a homozygous row with `VAF=0.0108` has `GT2=1` and `P=0.0108`. Closely spaced rows are retained rather than filtered out: e.g. group 37 contains two chromosome-10 sites 2 bp apart with the same `P=0.017`.
 
 ## How these tables are generated (conceptual)
 

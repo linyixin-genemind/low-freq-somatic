@@ -90,14 +90,20 @@ fileObject = open('seed.json', 'w')
 fileObject.write(jsObj)
 fileObject.close()
 
-# Prefer explicit genome_fasta; fall back to biobase layout used in the original analysis.
+# reshapeRC ships in bin/ with libseqrt.so and libomp.so. The rule below
+# points LD_LIBRARY_PATH at that directory so a bare PATH search is not required.
+_pipeline_dir = os.path.dirname(os.path.abspath(workflow.snakefile))
+reshape_bin = os.path.join(_pipeline_dir, "bin", "reshapeRC")
+reshape_lib = os.path.join(_pipeline_dir, "bin")
+somaticfilter_pl = os.path.join(_pipeline_dir, "bin", "somaticfilter.pl")
+
+# genome_fasta is required. There is no default reference path.
 # Run this snakefile from a **per-pair** working directory: data[].id is a platform
 # name (see config.example.json), so separate pairs that share a platform must not
 # share one cwd or outputs collide. Steps 3–4 read each pair directory separately.
-genome_dir = config.get(
-    "genome_fasta",
-    f"/biobase/data/genome/{config['genome']}/genome.fasta",
-)
+if not config.get("genome_fasta"):
+    raise Exception('Config must set "genome_fasta" to the reference FASTA.')
+genome_dir = config["genome_fasta"]
 
 # ---------------------------------------------------------------------------
 # Posfreq path: file = benchmark (same table for every id×depth);
@@ -260,15 +266,15 @@ rule varscan:
         indel = 'varscan/{id}_reads{reads}M.raw.indel.vcf.gz'
     benchmark: "logs/{id}_reads{reads}M_varscan.benchmark.txt" 
     params:
-        lcr = os.path.join("/biobase/data/genome", config["genome"], 'lcr.bed'),
-        opts = "--min-var-freq " + str(config['min_freq']) + ' --min-coverage-normal 10 --min-coverage-tumor 100 --min-freq-for-hom 0.75 --normal-purity 1.00 --tumor-purity 1.00 --p-value 0.99 --somatic-p-value 0.01 --strand-filter 0 --validation 1 --output-vcf 1'
+        opts = "--min-var-freq " + str(config['min_freq']) + ' --min-coverage-normal 10 --min-coverage-tumor 100 --min-freq-for-hom 0.75 --normal-purity 1.00 --tumor-purity 1.00 --p-value 0.99 --somatic-p-value 0.01 --strand-filter 0 --validation 1 --output-vcf 1',
+        somaticfilter = somaticfilter_pl,
     shell:
         '''
         opref={output.snp}
         opref=${{opref%.snp.vcf.gz}}
         java -jar VarScan.v2.4.3.jar somatic <(bgzip -d -c {input.N}) <(bgzip -d -c {input.T}) ${{opref}}.all {params.opts}
-        cat ${{opref}}.all.snp.vcf | perl /biobase/apps/novotumor/somaticfilter.pl - | bgzip -c > {output.snp}
-        cat ${{opref}}.all.indel.vcf | perl /biobase/apps/novotumor/somaticfilter.pl - | bgzip -c > {output.indel}
+        cat ${{opref}}.all.snp.vcf | perl {params.somaticfilter} - | bgzip -c > {output.snp}
+        cat ${{opref}}.all.indel.vcf | perl {params.somaticfilter} - | bgzip -c > {output.indel}
         bgzip ${{opref}}.all.snp.vcf
         bgzip ${{opref}}.all.indel.vcf
         bgzip ${{opref}}.all.validation
@@ -434,9 +440,11 @@ rule tsv:
         "varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz"
     benchmark: "logs/{id}_reads{reads}M_tsv.benchmark.txt"
     params:
-        ref = genome_dir
+        ref = genome_dir,
+        reshape = reshape_bin,
+        libdir = reshape_lib,
     shell:
-        "reshapeRC -i <(bgzip -d -c {input}) -g {params.ref} | bgzip -c > {output}"
+        "LD_LIBRARY_PATH={params.libdir}:${{LD_LIBRARY_PATH}} {params.reshape} -i <(bgzip -d -c {input}) -g {params.ref} | bgzip -c > {output}"
 
 rule sort_index:
     input:

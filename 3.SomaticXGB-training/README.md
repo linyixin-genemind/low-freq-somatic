@@ -14,15 +14,15 @@ Run `../2.PosMix-somatic-calling-pipeline/` **once per PosMix pair**, with `"fea
 
 Pipeline-2 example configs use a **platform name** as `data[].id` (e.g. `"SURFSeq_5000"`), not a pair tag. Output files are therefore named `{id}_reads{N}M…`. If two pairs (e.g. `12` and `13`) share the same platform `id` in one working directory, they **overwrite each other**.
 
-**Use a separate simulation working directory per pair**, and keep that pair’s step-2 config inside it:
+**Use a separate simulation working directory per pair**, and keep that pair’s step-2 config inside it. The tree below is an example of directories you create. `train_SomaticXGB.ipynb` reads the paths you write into `pair_dirs`; it does not create them, and running it unchanged does not produce the matrix or the model.
 
 ```
-{analysis_root}/train/12/
+/path/to/your/train/12/
     config.json              ← same file used as snakemake --configfile
     mutect_a_vraw/…
     varscan/…
     varscan_novo/…
-{analysis_root}/train/13/
+/path/to/your/train/13/
     config.json
     …
 ```
@@ -46,10 +46,22 @@ train_SomaticXGB.ipynb          ← this directory
 
 `SomaticXGB_features.R` is a **library**, not a CLI. `build_feature_matrix.R` (used by both train and predict notebooks) `source()`s it and calls `extract_somaticxgb_features()`.
 
+The training feature matrix is not in this repository. The notebook builds `feature_matrix.tsv.gz` from the per-pair force-calling outputs of pipeline 2. A file already written by that builder can be read with `fread` instead of rebuilding.
+
+## R package `data.vcf`
+
+`SomaticXGB_features.R` calls `library(data.vcf)` and uses `read_vars()` to read the force-calling and VarScan VCFs. The installed package is in `library/data.vcf` (built with R 4.2.3 on Linux x86-64). It is not on CRAN. Load it from this directory before running the feature script or either notebook:
+
+```r
+.libPaths(c("3.SomaticXGB-training/library", .libPaths()))
+```
+
+Use a path that reaches `library/` from the current working directory. The folder passed to `.libPaths()` is the parent of `data.vcf`, not `data.vcf` itself. The same R session also needs `data.table` (≥ 1.12.2), `Rcpp`, and `stringr`. R must be the 4.2 series; this copy is a compiled package, not source.
+
 ## Train in the notebook
 
 1. Open `train_SomaticXGB.ipynb` in this directory (`3.SomaticXGB-training/`).
-2. Edit `pair_dirs` to your pipeline-2 pair working directories (each with `config.json` + force-calling outputs).
+2. Replace the example `pair_dirs` with the pipeline-2 pair working directories you created (each with `config.json` + force-calling outputs). The notebook stops if those examples are left in place.
 3. Run all cells:
 
 | Step | What it does |
@@ -59,7 +71,7 @@ train_SomaticXGB.ipynb          ← this directory
 | Final train | Fits on **all** rows; default hyperparameters match the manuscript (`7` / `0.1` / `400`) |
 | Outputs | In this directory: `feature_matrix.tsv.gz`, `cv_results.tsv`, `med_auc.tsv`, `importance.tsv`, `SomaticXGB_retrained` |
 
-If you already have `feature_matrix.tsv.gz`, you can skip the build cell and `fread` it instead.
+A `feature_matrix.tsv.gz` already written by this builder can be read with `fread` instead of running the build cell again.
 
 Reference tables from the original analysis (`med_auc_0820.xls`, `importance_0820.txt`) remain in this directory for comparison.
 

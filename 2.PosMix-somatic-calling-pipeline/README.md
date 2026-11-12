@@ -64,7 +64,7 @@ Recommended config (matches the manuscript feature path):
 For **training diversity**, set `"posfreq"` to a pair directory under `../pos_files/train/…`.  
 For **held-out test / benchmark scoring**, a single shared file (e.g. `test/45/pf45_low.txt`) is appropriate.
 
-Example config: `config.example.json`.
+Example config: `config.example.json`. `"genome_fasta"` must be the reference FASTA; the pipeline does not supply a default path.
 
 Without `"features"`, force-calling is skipped and later training/prediction steps will have nothing to read.
 
@@ -85,7 +85,7 @@ Useful for full platform/caller evaluation **and** SomaticXGB inputs from the sa
 | -------------- | --------------------------------------------------------------------- |
 | `mutect2`      | Mutect2 filtered VCF                                                  |
 | `strelka2`     | Strelka2 somatic SNVs (via Manta indel candidates)                    |
-| `varscan`      | VarScan2 raw SNP/indel VCFs                                           |
+| `varscan`      | VarScan2 SNP/indel VCFs after `bin/somaticfilter.pl`                  |
 | `varscan_novo` | VarScan2 + fpfilter pass/fail VCFs                                    |
 | `features`     | Force-calling VCF + sorted alleles + bam-readcount TSV for SomaticXGB |
 
@@ -95,6 +95,21 @@ Key `"features"` outputs (per `{id}` / `{reads}`):
 - `mutect_a_vraw/{id}_reads{reads}M.raw.vcf.gz` — force-called VCF (**required** for training and prediction)
 - `varscan/{id}_reads{reads}M.raw.snp.sort.vcf.gz`
 - `varscan_novo/{id}_reads{reads}M.raw.snp.vcf.rc.tsv.gz`
+
+`features` turns bam-readcount output into that TSV with `bin/reshapeRC`. The executable and the two libraries it loads (`libseqrt.so`, `libomp.so`) are in `bin/`. The Snakemake rule sets `LD_LIBRARY_PATH` to `bin/`, so a normal `snakemake -s …/somatic_snv_posmix.smk` run does not need `reshapeRC` on `PATH`. The binary is Linux x86-64. To call it outside Snakemake:
+
+```bash
+export LD_LIBRARY_PATH=/path/to/2.PosMix-somatic-calling-pipeline/bin:${LD_LIBRARY_PATH}
+bin/reshapeRC -i readcount.txt -g genome.fasta
+```
+
+`-i` is the bam-readcount text (the pipeline decompresses `*.rc.gz` and passes that stream). `-g` is the reference FASTA used for the read counts.
+
+`bin/somaticfilter.pl` is plain Perl (no extra modules). The VarScan rule runs it on the somatic VCF before fpfilter and before the SomaticXGB candidate list is taken. Pass the VCF path, or `-` to read the VCF from standard input:
+
+```bash
+perl bin/somaticfilter.pl - < varscan.snp.vcf
+```
 
 ## Run
 

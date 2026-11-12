@@ -1,0 +1,16 @@
+data.vcf-package	data.vcf-package
+collapse_group	collapse_group
+data.vcf	data.vcf-package
+kvpaste	kvpaste
+kvsplit	kvsplit
+open_file	open_file
+open_file_rcpp	open_file_rcpp
+open_vcf	open_vcf
+rcpp_hello_world	rcpp_hello_world
+read_lines	read_lines
+read_vars	read_vars
+resize_list_string	resize_list_string
+str_to_ikv	str_to_ikv
+tovcf	tovcf
+uniq_char	uniq_char
+vcf_clean	vcf_clean

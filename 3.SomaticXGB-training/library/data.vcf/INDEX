@@ -1,0 +1,26 @@
+collapse_group          collapse each vector of a list by a group of
+                        indexs
+data.vcf-package        A short title line describing what the package
+                        does
+kvpaste                 paste cols of a data.table using key-value
+                        style
+kvsplit                 split key-value strings into dataframe
+open_file               open a vcf file
+open_file_rcpp          open a vcf file
+open_vcf                open a vcf file (gz-compressed or plain)
+rcpp_hello_world        Simple function using Rcpp
+read_lines              read n lines from the file.
+read_vars               Read n variants from a opened vcf file.
+resize_list_string      Resize a list of string vectors by a number
+                        vector with a same length with the list. The
+                        elements of x[i] after n[i] will be discarded,
+                        however, if the length of x[i] is less than
+                        n[i], the 'fill' string will be added in the
+                        end.
+str_to_ikv              Split a str by sep into ikv list.
+tovcf                   Convert a splited data.table to a standard VCF
+                        data.table
+uniq_char               remove consecutive duplicate characters in a
+                        string
+vcf_clean               clean vcf by specified keep info_keys and
+                        format_keys.

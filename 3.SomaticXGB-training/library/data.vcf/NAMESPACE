@@ -1,0 +1,13 @@
+importFrom(magrittr,"%>%")
+importFrom(Rcpp, evalCpp)
+useDynLib(data.vcf)
+
+export(open_file)
+export(read_lines)
+
+export(open_vcf)
+export(read_vars)
+
+export(`..`)
+export(strsplit2)
+export(tstrsplit2)
